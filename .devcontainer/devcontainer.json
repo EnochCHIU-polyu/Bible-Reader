@@ -1,0 +1,1 @@
+{"name": "Parallel Bible v6", "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm", "forwardPorts": [5173, 3001], "portsAttributes": {"5173": {"label": "Bible Reader", "onAutoForward": "openBrowser"}, "3001": {"label": "Bible API", "onAutoForward": "silent"}}, "postCreateCommand": "npm install", "postStartCommand": "npm run dev"}
