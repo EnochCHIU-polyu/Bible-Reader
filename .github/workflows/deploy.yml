@@ -116,7 +116,7 @@ jobs:
         working-directory: ${{ steps.project.outputs.dir }}
         env:
           VITE_STATIC_BIBLE: "true"
-          VITE_BASE_PATH: "/"
+          VITE_BASE_PATH: "./"
         run: npx vite build --outDir dist --emptyOutDir
 
       - name: Verify build
