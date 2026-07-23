@@ -29,7 +29,7 @@ import './styles.css';
 const NOTES_KEY = 'parallel-notes-v6';
 const THEME_KEY = 'parallel-theme-v6';
 const READING_POSITION_KEY = 'parallel-reading-position-v1';
-const CHAPTER_LIMIT = 2;
+const CHAPTER_LIMIT = 10;
 
 
 const MOBILE_LOCKED_HEADER_CSS = `
@@ -228,6 +228,11 @@ function App() {
   const previousScrollTop = useRef(0);
   const positionTimer = useRef(null);
   const restorePosition = useRef(readReadingPosition());
+  const chaptersRef = useRef([]);
+  const chapterCache = useRef(new Map());
+  const chapterRequests = useRef(new Map());
+  const navigationEpoch = useRef(0);
+  const boundaryCheckFrame = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -241,9 +246,12 @@ function App() {
         const book = savedMeta && validChapter ? savedBook : 'GEN';
         const chapter = savedMeta && validChapter ? Number(savedChapter) : 1;
         const verses = await getChapter(book, chapter, controller.signal);
+        const initial = [{ book, chapter, verses }];
+        chapterCache.current.set(`${book}.${chapter}`, verses);
+        chaptersRef.current = initial;
         setManifest(loadedManifest);
         setSelectedBook(book);
-        setChapters([{ book, chapter, verses }]);
+        setChapters(initial);
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       }
@@ -265,6 +273,8 @@ function App() {
     }, 250);
     return () => clearTimeout(saveTimer.current);
   }, [notes]);
+
+  useEffect(() => { chaptersRef.current = chapters; }, [chapters]);
 
   const adjacentChapter = useCallback(
     (current, direction) => {
@@ -291,6 +301,21 @@ function App() {
     },
     [manifest],
   );
+
+  const getCachedChapter = useCallback(async (book, chapter, signal) => {
+    const key = `${book}.${chapter}`;
+    if (chapterCache.current.has(key)) return chapterCache.current.get(key);
+    if (chapterRequests.current.has(key)) return chapterRequests.current.get(key);
+
+    const request = getChapter(book, chapter, signal)
+      .then((verses) => {
+        chapterCache.current.set(key, verses);
+        return verses;
+      })
+      .finally(() => chapterRequests.current.delete(key));
+    chapterRequests.current.set(key, request);
+    return request;
+  }, []);
 
   const captureScrollAnchor = () => {
     const host = scroller.current;
@@ -320,105 +345,143 @@ function App() {
 
   const loadAdjacent = useCallback(
     async (direction) => {
-      if (loading.current || query || !chapters.length) return;
-      const edge = direction > 0 ? chapters.at(-1) : chapters[0];
+      if (query) return;
+      const current = chaptersRef.current;
+      if (!current.length) return;
+      const edge = direction > 0 ? current.at(-1) : current[0];
       const target = adjacentChapter(edge, direction);
       if (!target) return;
+      const targetKey = chapterKey(target);
+      if (current.some((item) => chapterKey(item) === targetKey) || chapterRequests.current.has(targetKey)) return;
 
-      loading.current = true;
-      setBusy(direction > 0 ? 'down' : 'up');
+      const epoch = navigationEpoch.current;
+      setBusy((value) => value === 'jump' ? value : (direction > 0 ? 'down' : 'up'));
       setError('');
-      requestController.current?.abort();
-      requestController.current = new AbortController();
-
       try {
-        const verses = await getChapter(
-          target.book,
-          target.chapter,
-          requestController.current.signal,
-        );
-        scrollAnchor.current = captureScrollAnchor();
-        setChapters((current) =>
-          direction > 0
-            ? [...current, { ...target, verses }].slice(-CHAPTER_LIMIT)
-            : [{ ...target, verses }, ...current].slice(0, CHAPTER_LIMIT),
-        );
+        const verses = await getCachedChapter(target.book, target.chapter);
+        if (epoch !== navigationEpoch.current) return;
+
+        setChapters((live) => {
+          if (epoch !== navigationEpoch.current) return live;
+          const liveEdge = direction > 0 ? live.at(-1) : live[0];
+          if (!liveEdge || chapterKey(liveEdge) !== chapterKey(edge)) return live;
+          if (live.some((item) => chapterKey(item) === targetKey)) return live;
+
+          const anchor = captureScrollAnchor();
+          const expanded = direction > 0
+            ? [...live, { ...target, verses }]
+            : [{ ...target, verses }, ...live];
+          const trimmed = direction > 0
+            ? expanded.slice(-CHAPTER_LIMIT)
+            : expanded.slice(0, CHAPTER_LIMIT);
+          if (direction < 0 || expanded.length > CHAPTER_LIMIT) scrollAnchor.current = anchor;
+          chaptersRef.current = trimmed;
+          return trimmed;
+        });
+
+        // Warm the chapter after the newly inserted one. This is cache-only and
+        // causes no layout change, so the next boundary crossing feels instant.
+        const warmTarget = adjacentChapter(target, direction);
+        if (warmTarget && epoch === navigationEpoch.current) {
+          getCachedChapter(warmTarget.book, warmTarget.chapter).catch(() => {});
+        }
       } catch (err) {
-        if (err.name !== 'AbortError') setError(err.message);
+        if (err.name !== 'AbortError' && epoch === navigationEpoch.current) setError(err.message);
       } finally {
-        loading.current = false;
-        setBusy('');
+        if (epoch === navigationEpoch.current) setBusy((value) => value === 'jump' ? value : '');
       }
     },
-    [adjacentChapter, chapters, query],
+    [adjacentChapter, getCachedChapter, query],
   );
+
+  const checkBoundaries = useCallback(() => {
+    const element = scroller.current;
+    if (!element || query) return;
+    const preloadDistance = Math.max(element.clientHeight * 2.5, 1600);
+    const bottomDistance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (element.scrollTop < preloadDistance) loadAdjacent(-1);
+    if (bottomDistance < preloadDistance) loadAdjacent(1);
+  }, [loadAdjacent, query]);
 
   useEffect(() => {
     const element = scroller.current;
     if (!element) return undefined;
-    let frame = 0;
     const handleScroll = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const currentTop = element.scrollTop;
-        const movingDown = currentTop >= previousScrollTop.current;
-        previousScrollTop.current = currentTop;
+      cancelAnimationFrame(boundaryCheckFrame.current);
+      boundaryCheckFrame.current = requestAnimationFrame(() => {
+        previousScrollTop.current = element.scrollTop;
         clearTimeout(positionTimer.current);
         positionTimer.current = window.setTimeout(() => {
           const anchor = captureScrollAnchor();
           if (anchor) localStorage.setItem(READING_POSITION_KEY, JSON.stringify(anchor));
         }, 150);
-        if (
-          movingDown &&
-          element.scrollHeight - currentTop - element.clientHeight < 700
-        ) {
-          loadAdjacent(1);
-        } else if (!movingDown && currentTop < 360) {
-          loadAdjacent(-1);
-        }
+        checkBoundaries();
       });
     };
     element.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => {
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(boundaryCheckFrame.current);
       clearTimeout(positionTimer.current);
       element.removeEventListener('scroll', handleScroll);
     };
-  }, [loadAdjacent]);
+  }, [checkBoundaries]);
 
   useEffect(() => {
-    const element = scroller.current;
-    if (
-      element &&
-      chapters.length === 1 &&
-      !loading.current &&
-      element.scrollHeight < element.clientHeight + 700
-    ) {
-      loadAdjacent(1);
-    }
-  }, [chapters, loadAdjacent]);
+    // A render can change scrollHeight without firing a new scroll event.
+    // Recheck both edges after layout has settled.
+    cancelAnimationFrame(boundaryCheckFrame.current);
+    boundaryCheckFrame.current = requestAnimationFrame(checkBoundaries);
+    return () => cancelAnimationFrame(boundaryCheckFrame.current);
+  }, [chapters, checkBoundaries]);
 
   const goToVerse = useCallback(async (book, chapter, verse = 1) => {
+    const epoch = ++navigationEpoch.current;
     requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
     loading.current = true;
     setBusy('jump');
     setError('');
+    setPickerOpen(false);
+    setDrawerOpen(false);
+    setSelectedBook(book);
+    scrollAnchor.current = null;
+    restorePosition.current = null;
+    jumpTarget.current = `${book}.${chapter}.${verse}`;
+
     try {
-      const verses = await getChapter(book, chapter);
-      restorePosition.current = null;
-      jumpTarget.current = `${book}.${chapter}.${verse}`;
+      const target = { book, chapter };
+      const previous = adjacentChapter(target, -1);
+      const next = adjacentChapter(target, 1);
+      const candidates = [previous, target, next].filter(Boolean);
+      const loaded = await Promise.all(candidates.map(async (item) => ({
+        ...item,
+        verses: await getCachedChapter(item.book, item.chapter, controller.signal),
+      })));
+      if (controller.signal.aborted || epoch !== navigationEpoch.current) return;
+
+      chaptersRef.current = loaded;
+      previousScrollTop.current = 0;
+      if (scroller.current) scroller.current.scrollTop = 0;
       localStorage.setItem(READING_POSITION_KEY, JSON.stringify({ id: jumpTarget.current, offset: 0 }));
-      setChapters([{ book, chapter, verses }]);
-      setPickerOpen(false);
-      setDrawerOpen(false);
+      setChapters(loaded);
+
+      // Also warm one extra chapter in each direction without displaying it.
+      const before = previous && adjacentChapter(previous, -1);
+      const after = next && adjacentChapter(next, 1);
+      [before, after].filter(Boolean).forEach((item) => {
+        getCachedChapter(item.book, item.chapter).catch(() => {});
+      });
     } catch (err) {
-      setError(err.message);
+      if (err.name !== 'AbortError' && epoch === navigationEpoch.current) setError(err.message);
     } finally {
-      loading.current = false;
-      setBusy('');
+      if (epoch === navigationEpoch.current) {
+        loading.current = false;
+        setBusy('');
+      }
     }
-  }, []);
+  }, [adjacentChapter, getCachedChapter]);
 
   useLayoutEffect(() => {
     if (!chapters.length) return;
@@ -521,7 +584,7 @@ function App() {
           <Head title="Notes" subtitle="Free writing space">{saved && <span><Check />Saved</span>}</Head>
         </div>
         <div className="scroll" ref={scroller}>
-          {busy === 'up' && <Loading />}
+
           {chapters.map((section) => (
             <section className="chapterSection" key={chapterKey(section)}>
               <div className="chapter">{section.verses[0]?.bookName} · {section.verses[0]?.bookNameZh}<strong>{section.chapter}</strong></div>
@@ -538,7 +601,7 @@ function App() {
               ))}
             </section>
           ))}
-          {(busy === 'down' || busy === 'jump') && <Loading />}
+          {busy === 'jump' && <Loading />}
         </div>
       </section>
 
