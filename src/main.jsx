@@ -29,7 +29,6 @@ import './styles.css';
 const NOTES_KEY = 'parallel-notes-v6';
 const THEME_KEY = 'parallel-theme-v6';
 const READING_POSITION_KEY = 'parallel-reading-position-v1';
-const CHAPTER_LIMIT = 10;
 
 
 const MOBILE_LOCKED_HEADER_CSS = `
@@ -116,7 +115,13 @@ const MOBILE_LOCKED_HEADER_CSS = `
   .reader > .scroll {
     min-height: 0 !important;
     overscroll-behavior-y: contain !important;
+    overflow-anchor: none !important;
     -webkit-overflow-scrolling: touch !important;
+  }
+
+  .chapterSection,
+  .chapterSection .row {
+    overflow-anchor: none !important;
   }
 
   .error {
@@ -355,7 +360,6 @@ function App() {
       if (current.some((item) => chapterKey(item) === targetKey) || chapterRequests.current.has(targetKey)) return;
 
       const epoch = navigationEpoch.current;
-      setBusy((value) => value === 'jump' ? value : (direction > 0 ? 'down' : 'up'));
       setError('');
       try {
         const verses = await getCachedChapter(target.book, target.chapter);
@@ -367,16 +371,17 @@ function App() {
           if (!liveEdge || chapterKey(liveEdge) !== chapterKey(edge)) return live;
           if (live.some((item) => chapterKey(item) === targetKey)) return live;
 
-          const anchor = captureScrollAnchor();
+          const anchor = direction < 0 ? captureScrollAnchor() : null;
           const expanded = direction > 0
             ? [...live, { ...target, verses }]
             : [{ ...target, verses }, ...live];
-          const trimmed = direction > 0
-            ? expanded.slice(-CHAPTER_LIMIT)
-            : expanded.slice(0, CHAPTER_LIMIT);
-          if (direction < 0 || expanded.length > CHAPTER_LIMIT) scrollAnchor.current = anchor;
-          chaptersRef.current = trimmed;
-          return trimmed;
+
+          // Never remove already rendered chapters during normal scrolling.
+          // Deleting from the top changes scrollHeight and can move the user's
+          // viewport by an entire chapter. Only a prepend needs anchor recovery.
+          if (direction < 0) scrollAnchor.current = anchor;
+          chaptersRef.current = expanded;
+          return expanded;
         });
 
         // Warm the chapter after the newly inserted one. This is cache-only and
@@ -388,7 +393,6 @@ function App() {
       } catch (err) {
         if (err.name !== 'AbortError' && epoch === navigationEpoch.current) setError(err.message);
       } finally {
-        if (epoch === navigationEpoch.current) setBusy((value) => value === 'jump' ? value : '');
       }
     },
     [adjacentChapter, getCachedChapter, query],
@@ -461,6 +465,8 @@ function App() {
       })));
       if (controller.signal.aborted || epoch !== navigationEpoch.current) return;
 
+      // A direct book/chapter jump intentionally starts a new mounted stream.
+      // Ordinary scrolling never deletes chapters from the current stream.
       chaptersRef.current = loaded;
       previousScrollTop.current = 0;
       if (scroller.current) scroller.current.scrollTop = 0;
