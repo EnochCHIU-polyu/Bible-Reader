@@ -29,14 +29,14 @@ import './styles.css';
 const NOTES_KEY = 'parallel-notes-v6';
 const THEME_KEY = 'parallel-theme-v6';
 const READING_POSITION_KEY = 'parallel-reading-position-v1';
-const CHAPTER_LIMIT = 6;
+const CHAPTER_LIMIT = 8;
 
 const MOBILE_COMPOSER_CSS = `
 @media (max-width: 850px) {
-  .composerShade { position:fixed!important; inset:var(--vv-top,0px) 0 auto!important; z-index:1000!important; width:100%!important; height:var(--vv-height,100dvh)!important; display:flex!important; align-items:flex-end!important; background:rgba(0,0,0,.48)!important; overscroll-behavior:contain; }
-  .composer { box-sizing:border-box!important; width:100%!important; height:min(72dvh,620px)!important; max-height:calc(var(--vv-height,100dvh) - 8px)!important; margin:0!important; padding:8px 14px max(12px,env(safe-area-inset-bottom))!important; display:flex!important; flex-direction:column!important; gap:10px!important; overflow:hidden!important; border-radius:24px 24px 0 0!important; background:var(--surface,#151a16)!important; box-shadow:0 -16px 50px rgba(0,0,0,.28)!important; }
-  .composerShade.keyboardOpen { background:transparent!important; }
-  .composerShade.keyboardOpen .composer { height:100%!important; max-height:100%!important; border-radius:16px 16px 0 0!important; padding-bottom:8px!important; }
+  .composerShade { position:fixed!important; left:0!important; top:var(--vv-top,0px)!important; z-index:1000!important; width:100vw!important; height:var(--vv-height,100dvh)!important; display:flex!important; align-items:stretch!important; background:var(--surface,#151a16)!important; overflow:hidden!important; overscroll-behavior:none!important; touch-action:none!important; }
+  .composer { box-sizing:border-box!important; width:100%!important; height:100%!important; max-height:none!important; margin:0!important; padding:8px 14px max(10px,env(safe-area-inset-bottom))!important; display:flex!important; flex-direction:column!important; gap:10px!important; overflow:hidden!important; border:0!important; border-radius:0!important; background:var(--surface,#151a16)!important; box-shadow:none!important; touch-action:auto!important; }
+  .composerShade.keyboardOpen { background:var(--surface,#151a16)!important; }
+  .composerShade.keyboardOpen .composer { height:100%!important; max-height:100%!important; border-radius:0!important; padding-bottom:6px!important; }
   .composerHandle { flex:0 0 auto!important; width:44px!important; height:5px!important; margin:0 auto 2px!important; border-radius:99px!important; background:currentColor!important; opacity:.28!important; }
   .composerTopbar { min-width:0!important; display:grid!important; grid-template-columns:48px minmax(0,1fr) 48px!important; align-items:center!important; gap:8px!important; padding:0!important; }
   .composerTitle { min-width:0!important; text-align:center!important; }
@@ -96,7 +96,8 @@ function App() {
   const scrollAnchor = useRef(null);
   const jumpTarget = useRef(null);
   const previousScrollTop = useRef(0);
-  const pendingDirection = useRef(0);
+  const chaptersRef = useRef([]);
+  const inFlightChapter = useRef('');
   const positionTimer = useRef(null);
   const restorePosition = useRef(readReadingPosition());
 
@@ -134,6 +135,8 @@ function App() {
     }, 250);
     return () => clearTimeout(saveTimer.current);
   }, [notes]);
+
+  useEffect(() => { chaptersRef.current = chapters; }, [chapters]);
 
   const adjacentChapter = useCallback(
     (current, direction) => {
@@ -189,48 +192,48 @@ function App() {
 
   const loadAdjacent = useCallback(
     async (direction) => {
-      if (query || !chapters.length) return;
-      if (loading.current) {
-        pendingDirection.current = direction;
-        return;
-      }
-      const edge = direction > 0 ? chapters.at(-1) : chapters[0];
+      const currentChapters = chaptersRef.current;
+      if (query || !currentChapters.length || loading.current) return;
+      const edge = direction > 0 ? currentChapters.at(-1) : currentChapters[0];
       const target = adjacentChapter(edge, direction);
       if (!target) return;
+      const targetKey = chapterKey(target);
+      if (inFlightChapter.current === targetKey || currentChapters.some((item) => chapterKey(item) === targetKey)) return;
 
       loading.current = true;
+      inFlightChapter.current = targetKey;
       setBusy(direction > 0 ? 'down' : 'up');
       setError('');
-      requestController.current?.abort();
-      requestController.current = new AbortController();
+      const controller = new AbortController();
+      requestController.current = controller;
 
       try {
-        const verses = await getChapter(
-          target.book,
-          target.chapter,
-          requestController.current.signal,
-        );
-        scrollAnchor.current = captureScrollAnchor();
-        setChapters((current) =>
-          direction > 0
-            ? [...current, { ...target, verses }].slice(-CHAPTER_LIMIT)
-            : [{ ...target, verses }, ...current].slice(0, CHAPTER_LIMIT),
-        );
+        const verses = await getChapter(target.book, target.chapter, controller.signal);
+        if (controller.signal.aborted) return;
+        setChapters((current) => {
+          // The functional update is the source of truth; stale scroll callbacks
+          // can never insert the same chapter twice.
+          if (current.some((item) => chapterKey(item) === targetKey)) return current;
+          const anchor = captureScrollAnchor();
+          const next = direction > 0
+            ? [...current, { ...target, verses }]
+            : [{ ...target, verses }, ...current];
+          const trimmed = direction > 0
+            ? next.slice(-CHAPTER_LIMIT)
+            : next.slice(0, CHAPTER_LIMIT);
+          // Preserve the visible verse when prepending or when trimming the top.
+          if (direction < 0 || next.length > CHAPTER_LIMIT) scrollAnchor.current = anchor;
+          return trimmed;
+        });
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       } finally {
+        if (inFlightChapter.current === targetKey) inFlightChapter.current = '';
         loading.current = false;
         setBusy('');
-        // A fast swipe can reach the edge while a request is still running.
-        // Remember that direction and trigger another boundary check after render.
-        if (pendingDirection.current) {
-          const queuedDirection = pendingDirection.current;
-          pendingDirection.current = 0;
-          window.setTimeout(() => loadAdjacent(queuedDirection), 0);
-        }
       }
     },
-    [adjacentChapter, chapters, query],
+    [adjacentChapter, query],
   );
 
   useEffect(() => {
@@ -252,10 +255,10 @@ function App() {
 
         if (
           movingDown &&
-          element.scrollHeight - currentTop - element.clientHeight < 700
+          element.scrollHeight - currentTop - element.clientHeight < 1800
         ) {
           loadAdjacent(1);
-        } else if (!movingDown && currentTop < 360) {
+        } else if (!movingDown && currentTop < 700) {
           loadAdjacent(-1);
         }
       });
@@ -275,8 +278,8 @@ function App() {
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
     // Re-check after every chapter render. This prevents a fast swipe from
     // getting stuck when no new scroll event fires after loading completes.
-    if (distanceFromBottom < 900) loadAdjacent(1);
-    else if (element.scrollTop < 260 && chapters.length > 1) loadAdjacent(-1);
+    if (distanceFromBottom < 1800) loadAdjacent(1);
+    else if (element.scrollTop < 700 && chapters.length > 1) loadAdjacent(-1);
   }, [chapters, loadAdjacent, query]);
 
   const goToVerse = useCallback(async (book, chapter, verse = 1) => {
@@ -399,7 +402,7 @@ function App() {
           <Head title="Notes" subtitle="Free writing space">{saved && <span><Check />Saved</span>}</Head>
         </div>
         <div className="scroll" ref={scroller}>
-          {busy === 'up' && <Loading />}
+          {busy === 'jump' && <Loading />}
           {chapters.map((section) => (
             <section className="chapterSection" key={chapterKey(section)}>
               <div className="chapter">{section.verses[0]?.bookName} · {section.verses[0]?.bookNameZh}<strong>{section.chapter}</strong></div>
@@ -416,7 +419,7 @@ function App() {
               ))}
             </section>
           ))}
-          {(busy === 'down' || busy === 'jump') && <Loading />}
+
         </div>
       </section>
 
@@ -450,20 +453,30 @@ function MobileComposer({ verse, value, setValue, close, save }) {
   useLayoutEffect(() => {
     const vv = window.visualViewport;
     const update = () => setViewport({
-      height: vv?.height || window.innerHeight,
-      top: vv?.offsetTop || 0,
+      height: Math.round(vv?.height || window.innerHeight),
+      top: Math.round(vv?.offsetTop || 0),
     });
+    const stopBackgroundGesture = (event) => {
+      if (!(event.target instanceof Element) || !event.target.closest('.composer')) event.preventDefault();
+    };
     update();
     vv?.addEventListener('resize', update);
     vv?.addEventListener('scroll', update);
     window.addEventListener('resize', update);
-    const oldOverflow = document.body.style.overflow;
+    document.addEventListener('touchmove', stopBackgroundGesture, { passive: false, capture: true });
+    const oldBodyOverflow = document.body.style.overflow;
+    const oldHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    scroller.current?.setAttribute('inert', '');
     return () => {
       vv?.removeEventListener('resize', update);
       vv?.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
-      document.body.style.overflow = oldOverflow;
+      document.removeEventListener('touchmove', stopBackgroundGesture, { capture: true });
+      document.body.style.overflow = oldBodyOverflow;
+      document.documentElement.style.overflow = oldHtmlOverflow;
+      scroller.current?.removeAttribute('inert');
     };
   }, []);
 
@@ -475,7 +488,7 @@ function MobileComposer({ verse, value, setValue, close, save }) {
   const keyboardOpen = viewport.height < window.innerHeight * 0.78;
   return <div className={`composerShade ${keyboardOpen ? 'keyboardOpen' : ''}`}
     style={{ '--vv-height': `${viewport.height}px`, '--vv-top': `${viewport.top}px` }}
-    onMouseDown={(event) => event.target === event.currentTarget && close()}>
+    onMouseDown={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
     <section className="composer" role="dialog" aria-modal="true" aria-label={`Note for ${verse.ref}`}>
       <div className="composerHandle" />
       <header className="composerTopbar">
