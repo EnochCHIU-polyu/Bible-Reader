@@ -31,6 +31,109 @@ const THEME_KEY = 'parallel-theme-v6';
 const READING_POSITION_KEY = 'parallel-reading-position-v1';
 const CHAPTER_LIMIT = 2;
 
+
+const MOBILE_LOCKED_HEADER_CSS = `
+@media (max-width: 850px) {
+  :root {
+    --phone-safe-top: max(env(safe-area-inset-top, 0px), 44px);
+    --phone-header-bar: 72px;
+    --phone-header-height: calc(var(--phone-safe-top) + var(--phone-header-bar));
+  }
+
+  html, body, #root, main {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .top {
+    box-sizing: border-box !important;
+    position: fixed !important;
+    z-index: 1000 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    height: var(--phone-header-height) !important;
+    min-height: var(--phone-header-height) !important;
+    margin: 0 !important;
+    padding: var(--phone-safe-top) 10px 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    overflow: visible !important;
+    transform: translateZ(0) !important;
+    backface-visibility: hidden !important;
+    contain: layout paint !important;
+    touch-action: manipulation !important;
+  }
+
+  .top .brand {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  .top .brand b,
+  .top .brand small {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .top > button,
+  .top .mobileLang {
+    flex: 0 0 48px !important;
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    min-height: 48px !important;
+    padding: 0 !important;
+  }
+
+  .top .mobileLang {
+    flex-basis: auto !important;
+    width: auto !important;
+    min-width: 64px !important;
+    padding-inline: 10px !important;
+  }
+
+  .reader {
+    box-sizing: border-box !important;
+    position: fixed !important;
+    z-index: 1 !important;
+    top: var(--phone-header-height) !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .reader > .scroll {
+    min-height: 0 !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .error {
+    position: fixed !important;
+    z-index: 1100 !important;
+    top: calc(var(--phone-header-height) + 8px) !important;
+    left: 10px !important;
+    right: 10px !important;
+  }
+
+  .shade,
+  .drawerShade,
+  .composerShade {
+    z-index: 2000 !important;
+  }
+}
+`;
 const MOBILE_NOTE_CSS = `
 @media (max-width: 850px) {
   html.noteOpen, html.noteOpen body { overflow: hidden !important; overscroll-behavior: none !important; }
@@ -398,6 +501,7 @@ function App() {
 
   return (
     <main>
+      <style>{MOBILE_LOCKED_HEADER_CSS}</style>
       <style>{MOBILE_NOTE_CSS}</style>
       <header className="top">
         <div className="brand"><i><BookOpen /></i><b>Parallel Bible<small>ESV · 新譯本 · Notes</small></b></div>
