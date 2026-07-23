@@ -123,10 +123,18 @@ jobs:
         working-directory: ${{ steps.project.outputs.dir }}
         shell: bash
         run: |
-          test -f dist/index.html
-          test -f dist/bible/manifest.json
-          test -f dist/bible/GEN/1.json
-          grep -q 'assets/' dist/index.html
+          test -f dist/index.html || { echo "Error: dist/index.html is missing"; exit 1; }
+          test -f dist/bible/manifest.json || { echo "Error: dist/bible/manifest.json is missing"; exit 1; }
+          test -f dist/bible/GEN/1.json || { echo "Error: dist/bible/GEN/1.json is missing"; exit 1; }
+          
+          # If grep fails, print the HTML so we can see what Vite actually generated
+          grep -q 'assets/' dist/index.html || { 
+            echo "Error: Could not find 'assets/' in index.html. Here is the generated HTML:"; 
+            cat dist/index.html; 
+            exit 1; 
+          }
+          
+          echo "All verification checks passed!"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
