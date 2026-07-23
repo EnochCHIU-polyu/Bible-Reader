@@ -1,0 +1,412 @@
+{
+  "translations": {
+    "en": {
+      "translation": "English ESV 2016 == The Holy Bible, English Standard Version. ESV® Text Edition: 2016. Copyright © 2001 by Crossway Bibles"
+    },
+    "zh": {
+      "translation": "Chinese Bible CNVT (Traditional) - (新譯本)",
+      "status": "Scripture texts are from The Holy Bible, Chinese New Version, copyright © 1976,1992,1999,2001,2005,2010 by The Worldwide Bible Society Limited.",
+      "site": "https://www.bible.com/bible/40/LEV.2.CNV"
+    }
+  },
+  "books": [
+    {
+      "code": "GEN",
+      "name": "Genesis",
+      "nameZh": "創世記",
+      "chapters": 50
+    },
+    {
+      "code": "EXO",
+      "name": "Exodus",
+      "nameZh": "出埃及記",
+      "chapters": 40
+    },
+    {
+      "code": "LEV",
+      "name": "Leviticus",
+      "nameZh": "利未記",
+      "chapters": 27
+    },
+    {
+      "code": "NUM",
+      "name": "Numbers",
+      "nameZh": "民數記",
+      "chapters": 36
+    },
+    {
+      "code": "DEU",
+      "name": "Deuteronomy",
+      "nameZh": "申命記",
+      "chapters": 34
+    },
+    {
+      "code": "JOS",
+      "name": "Joshua",
+      "nameZh": "約書亞記",
+      "chapters": 24
+    },
+    {
+      "code": "JDG",
+      "name": "Judges",
+      "nameZh": "士師記",
+      "chapters": 21
+    },
+    {
+      "code": "RUT",
+      "name": "Ruth",
+      "nameZh": "路得記",
+      "chapters": 4
+    },
+    {
+      "code": "1SA",
+      "name": "1 Samuel",
+      "nameZh": "撒母耳記上",
+      "chapters": 31
+    },
+    {
+      "code": "2SA",
+      "name": "2 Samuel",
+      "nameZh": "撒母耳記下",
+      "chapters": 24
+    },
+    {
+      "code": "1KI",
+      "name": "1 Kings",
+      "nameZh": "列王紀上",
+      "chapters": 22
+    },
+    {
+      "code": "2KI",
+      "name": "2 Kings",
+      "nameZh": "列王紀下",
+      "chapters": 25
+    },
+    {
+      "code": "1CH",
+      "name": "1 Chronicles",
+      "nameZh": "歷代志上",
+      "chapters": 29
+    },
+    {
+      "code": "2CH",
+      "name": "2 Chronicles",
+      "nameZh": "歷代志下",
+      "chapters": 36
+    },
+    {
+      "code": "EZ",
+      "name": "Ezra",
+      "nameZh": "以斯拉記",
+      "chapters": 10
+    },
+    {
+      "code": "NEH",
+      "name": "Nehemiah",
+      "nameZh": "尼希米記",
+      "chapters": 13
+    },
+    {
+      "code": "EST",
+      "name": "Esther",
+      "nameZh": "以斯帖記",
+      "chapters": 10
+    },
+    {
+      "code": "JOB",
+      "name": "Job",
+      "nameZh": "約伯記",
+      "chapters": 42
+    },
+    {
+      "code": "PSA",
+      "name": "Psalms",
+      "nameZh": "詩篇",
+      "chapters": 150
+    },
+    {
+      "code": "PRO",
+      "name": "Proverbs",
+      "nameZh": "箴言",
+      "chapters": 31
+    },
+    {
+      "code": "ECC",
+      "name": "Ecclesiastes",
+      "nameZh": "傳道書",
+      "chapters": 12
+    },
+    {
+      "code": "SNG",
+      "name": "Song of Solomon",
+      "nameZh": "雅歌",
+      "chapters": 8
+    },
+    {
+      "code": "ISA",
+      "name": "Isaiah",
+      "nameZh": "以賽亞書",
+      "chapters": 66
+    },
+    {
+      "code": "JER",
+      "name": "Jeremiah",
+      "nameZh": "耶利米書",
+      "chapters": 52
+    },
+    {
+      "code": "LAM",
+      "name": "Lamentations",
+      "nameZh": "耶利米哀歌",
+      "chapters": 5
+    },
+    {
+      "code": "EZK",
+      "name": "Ezekiel",
+      "nameZh": "以西結書",
+      "chapters": 48
+    },
+    {
+      "code": "DAN",
+      "name": "Daniel",
+      "nameZh": "但以理書",
+      "chapters": 12
+    },
+    {
+      "code": "HOS",
+      "name": "Hosea",
+      "nameZh": "何西阿書",
+      "chapters": 14
+    },
+    {
+      "code": "JOL",
+      "name": "Joel",
+      "nameZh": "約珥書",
+      "chapters": 3
+    },
+    {
+      "code": "AMO",
+      "name": "Amos",
+      "nameZh": "阿摩司書",
+      "chapters": 9
+    },
+    {
+      "code": "OBA",
+      "name": "Obadiah",
+      "nameZh": "俄巴底亞書",
+      "chapters": 1
+    },
+    {
+      "code": "JON",
+      "name": "Jonah",
+      "nameZh": "約拿書",
+      "chapters": 4
+    },
+    {
+      "code": "MIC",
+      "name": "Micah",
+      "nameZh": "彌迦書",
+      "chapters": 7
+    },
+    {
+      "code": "NAM",
+      "name": "Nahum",
+      "nameZh": "那鴻書",
+      "chapters": 3
+    },
+    {
+      "code": "HAB",
+      "name": "Habakkuk",
+      "nameZh": "哈巴谷書",
+      "chapters": 3
+    },
+    {
+      "code": "ZEP",
+      "name": "Zephaniah",
+      "nameZh": "西番雅書",
+      "chapters": 3
+    },
+    {
+      "code": "HAG",
+      "name": "Haggai",
+      "nameZh": "哈該書",
+      "chapters": 2
+    },
+    {
+      "code": "ZEC",
+      "name": "Zechariah",
+      "nameZh": "撒迦利亞書",
+      "chapters": 14
+    },
+    {
+      "code": "MAL",
+      "name": "Malachi",
+      "nameZh": "瑪拉基書",
+      "chapters": 4
+    },
+    {
+      "code": "MAT",
+      "name": "Matthew",
+      "nameZh": "馬太福音",
+      "chapters": 28
+    },
+    {
+      "code": "MRK",
+      "name": "Mark",
+      "nameZh": "馬可福音",
+      "chapters": 16
+    },
+    {
+      "code": "LUK",
+      "name": "Luke",
+      "nameZh": "路加福音",
+      "chapters": 24
+    },
+    {
+      "code": "JHN",
+      "name": "John",
+      "nameZh": "約翰福音",
+      "chapters": 21
+    },
+    {
+      "code": "ACT",
+      "name": "Acts",
+      "nameZh": "使徒行傳",
+      "chapters": 28
+    },
+    {
+      "code": "ROM",
+      "name": "Romans",
+      "nameZh": "羅馬書",
+      "chapters": 16
+    },
+    {
+      "code": "1CO",
+      "name": "1 Corinthians",
+      "nameZh": "哥林多前書",
+      "chapters": 16
+    },
+    {
+      "code": "2CO",
+      "name": "2 Corinthians",
+      "nameZh": "哥林多後書",
+      "chapters": 13
+    },
+    {
+      "code": "GAL",
+      "name": "Galatians",
+      "nameZh": "加拉太書",
+      "chapters": 6
+    },
+    {
+      "code": "EPH",
+      "name": "Ephesians",
+      "nameZh": "以弗所書",
+      "chapters": 6
+    },
+    {
+      "code": "PHP",
+      "name": "Philippians",
+      "nameZh": "腓立比書",
+      "chapters": 4
+    },
+    {
+      "code": "COL",
+      "name": "Colossians",
+      "nameZh": "歌羅西書",
+      "chapters": 4
+    },
+    {
+      "code": "1TH",
+      "name": "1 Thessalonians",
+      "nameZh": "帖撒羅尼迦前書",
+      "chapters": 5
+    },
+    {
+      "code": "2TH",
+      "name": "2 Thessalonians",
+      "nameZh": "帖撒羅尼迦後書",
+      "chapters": 3
+    },
+    {
+      "code": "1TI",
+      "name": "1 Timothy",
+      "nameZh": "提摩太前書",
+      "chapters": 6
+    },
+    {
+      "code": "2TI",
+      "name": "2 Timothy",
+      "nameZh": "提摩太後書",
+      "chapters": 4
+    },
+    {
+      "code": "TIT",
+      "name": "Titus",
+      "nameZh": "提多書",
+      "chapters": 3
+    },
+    {
+      "code": "PHM",
+      "name": "Philemon",
+      "nameZh": "腓利門書",
+      "chapters": 1
+    },
+    {
+      "code": "HEB",
+      "name": "Hebrews",
+      "nameZh": "希伯來書",
+      "chapters": 13
+    },
+    {
+      "code": "JAS",
+      "name": "James",
+      "nameZh": "雅各書",
+      "chapters": 5
+    },
+    {
+      "code": "1PE",
+      "name": "1 Peter",
+      "nameZh": "彼得前書",
+      "chapters": 5
+    },
+    {
+      "code": "2PE",
+      "name": "2 Peter",
+      "nameZh": "彼得後書",
+      "chapters": 3
+    },
+    {
+      "code": "1JN",
+      "name": "1 John",
+      "nameZh": "約翰一書",
+      "chapters": 5
+    },
+    {
+      "code": "2JN",
+      "name": "2 John",
+      "nameZh": "約翰二書",
+      "chapters": 1
+    },
+    {
+      "code": "3JN",
+      "name": "3 John",
+      "nameZh": "約翰三書",
+      "chapters": 1
+    },
+    {
+      "code": "JUD",
+      "name": "Jude",
+      "nameZh": "猶大書",
+      "chapters": 1
+    },
+    {
+      "code": "REV",
+      "name": "Revelation",
+      "nameZh": "啟示錄",
+      "chapters": 22
+    }
+  ],
+  "totalChapters": 1189,
+  "totalVerses": 31105
+}
