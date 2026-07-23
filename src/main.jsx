@@ -29,6 +29,30 @@ import './styles.css';
 const NOTES_KEY = 'parallel-notes-v6';
 const THEME_KEY = 'parallel-theme-v6';
 const CHAPTER_LIMIT = 2;
+
+const MOBILE_COMPOSER_CSS = `
+@media (max-width: 850px) {
+  .composerShade { position:fixed!important; inset:var(--vv-top,0px) 0 auto!important; z-index:1000!important; width:100%!important; height:var(--vv-height,100dvh)!important; display:flex!important; align-items:flex-end!important; background:rgba(0,0,0,.48)!important; overscroll-behavior:contain; }
+  .composer { box-sizing:border-box!important; width:100%!important; height:min(72dvh,620px)!important; max-height:calc(var(--vv-height,100dvh) - 8px)!important; margin:0!important; padding:8px 14px max(12px,env(safe-area-inset-bottom))!important; display:flex!important; flex-direction:column!important; gap:10px!important; overflow:hidden!important; border-radius:24px 24px 0 0!important; background:var(--surface,#151a16)!important; box-shadow:0 -16px 50px rgba(0,0,0,.28)!important; }
+  .composerShade.keyboardOpen { background:transparent!important; }
+  .composerShade.keyboardOpen .composer { height:100%!important; max-height:100%!important; border-radius:16px 16px 0 0!important; padding-bottom:8px!important; }
+  .composerHandle { flex:0 0 auto!important; width:44px!important; height:5px!important; margin:0 auto 2px!important; border-radius:99px!important; background:currentColor!important; opacity:.28!important; }
+  .composerTopbar { min-width:0!important; display:grid!important; grid-template-columns:48px minmax(0,1fr) 48px!important; align-items:center!important; gap:8px!important; padding:0!important; }
+  .composerTitle { min-width:0!important; text-align:center!important; }
+  .composerTitle small { display:block!important; font-size:10px!important; letter-spacing:.12em!important; opacity:.62!important; }
+  .composerTitle strong { display:block!important; overflow:hidden!important; text-overflow:ellipsis!important; white-space:nowrap!important; font-size:16px!important; }
+  .composerIconButton { width:48px!important; height:48px!important; display:grid!important; place-items:center!important; padding:0!important; border-radius:15px!important; touch-action:manipulation; }
+  .composerIconButton svg { width:24px!important; height:24px!important; }
+  .composerVerse { flex:0 0 auto!important; max-height:4.6em!important; overflow:auto!important; padding:10px 12px!important; border-radius:12px!important; font-size:14px!important; line-height:1.55!important; background:rgba(127,127,127,.1)!important; opacity:.82!important; }
+  .composer textarea { box-sizing:border-box!important; flex:1 1 auto!important; min-height:96px!important; width:100%!important; resize:none!important; padding:14px!important; border-radius:14px!important; font:inherit!important; font-size:16px!important; line-height:1.55!important; -webkit-appearance:none; }
+  .composer footer { flex:0 0 auto!important; display:flex!important; align-items:center!important; justify-content:space-between!important; gap:12px!important; padding:0!important; }
+  .composer footer span { min-width:0!important; font-size:12px!important; opacity:.62!important; }
+  .composer footer button { min-height:48px!important; padding:0 18px!important; display:inline-flex!important; align-items:center!important; gap:7px!important; border-radius:14px!important; white-space:nowrap!important; touch-action:manipulation; }
+  .composer footer button svg { width:18px!important; }
+  .keyboardOpen .composerVerse { max-height:3.1em!important; padding-block:7px!important; }
+  .keyboardOpen .composer footer { display:none!important; }
+}
+`;
 const chapterKey = (chapter) => `${chapter.book}.${chapter.chapter}`;
 
 function readNotes() {
@@ -306,6 +330,7 @@ function App() {
 
   return (
     <main>
+      <style>{MOBILE_COMPOSER_CSS}</style>
       <header className="top">
         <div className="brand"><i><BookOpen /></i><b>Parallel Bible<small>ESV · 新譯本 · Notes</small></b></div>
         <label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search / 搜尋" /></label>
@@ -370,8 +395,49 @@ function NotesDrawer({ items, close, go }) {
 
 function MobileComposer({ verse, value, setValue, close, save }) {
   const input = useRef(null);
-  useEffect(() => { input.current?.focus(); }, []);
-  return <div className="composerShade" onMouseDown={(event) => event.target === event.currentTarget && close()}><section className="composer" role="dialog" aria-modal="true" aria-label={`Note for ${verse.ref}`}><div className="composerHandle" /><header><button onClick={close} aria-label="Cancel"><X /></button><div><small>{verse.bookNameZh} · {verse.chapter}:{verse.verse}</small><strong>{verse.zh}</strong></div><button className="saveNote" onClick={save} aria-label="Save note"><Send /></button></header><textarea ref={input} value={value} onChange={(event) => setValue(event.target.value)} placeholder="寫下筆記…" /><footer><span>筆記將連結至 {verse.bookNameZh} {verse.chapter}:{verse.verse}</span><button onClick={save}><Check />完成</button></footer></section></div>;
+  const [viewport, setViewport] = useState({ height: window.innerHeight, top: 0 });
+
+  useLayoutEffect(() => {
+    const vv = window.visualViewport;
+    const update = () => setViewport({
+      height: vv?.height || window.innerHeight,
+      top: vv?.offsetTop || 0,
+    });
+    update();
+    vv?.addEventListener('resize', update);
+    vv?.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      vv?.removeEventListener('resize', update);
+      vv?.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      document.body.style.overflow = oldOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => input.current?.focus({ preventScroll: true }), 80);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const keyboardOpen = viewport.height < window.innerHeight * 0.78;
+  return <div className={`composerShade ${keyboardOpen ? 'keyboardOpen' : ''}`}
+    style={{ '--vv-height': `${viewport.height}px`, '--vv-top': `${viewport.top}px` }}
+    onMouseDown={(event) => event.target === event.currentTarget && close()}>
+    <section className="composer" role="dialog" aria-modal="true" aria-label={`Note for ${verse.ref}`}>
+      <div className="composerHandle" />
+      <header className="composerTopbar">
+        <button className="composerIconButton" onClick={close} aria-label="Cancel"><X /></button>
+        <div className="composerTitle"><small>NOTE · 筆記</small><strong>{verse.bookNameZh} {verse.chapter}:{verse.verse}</strong></div>
+        <button className="saveNote composerIconButton" onClick={save} aria-label="Save note"><Check /></button>
+      </header>
+      <div className="composerVerse" lang="zh-Hant">{verse.zh}</div>
+      <textarea ref={input} value={value} onChange={(event) => setValue(event.target.value)} placeholder="寫下你的筆記…" aria-label={`Note for ${verse.bookNameZh} ${verse.chapter}:${verse.verse}`} />
+      <footer><span>{value.length ? `${value.length} 字元` : '只儲存在此裝置'}</span><button onClick={save}><Check />儲存筆記</button></footer>
+    </section>
+  </div>;
 }
 
 function ModalHead({ title, subtitle, close }) { return <header className="modalhead"><div><b>{title}</b><small>{subtitle}</small></div><button onClick={close}><X /></button></header>; }
