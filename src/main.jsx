@@ -28,8 +28,69 @@ import './styles.css';
 
 const NOTES_KEY = 'parallel-notes-v6';
 const THEME_KEY = 'parallel-theme-v6';
-const CHAPTER_LIMIT = 4;
+const READING_POSITION_KEY = 'parallel-reading-position-v1';
+const CHAPTER_LIMIT = 2;
+
+const MOBILE_NOTE_CSS = `
+@media (max-width: 850px) {
+  html.noteOpen, html.noteOpen body { overflow: hidden !important; overscroll-behavior: none !important; }
+  .composerShade {
+    position: fixed !important;
+    left: 0 !important;
+    top: var(--note-top, 0px) !important;
+    width: 100vw !important;
+    height: var(--note-height, 100dvh) !important;
+    z-index: 2147483000 !important;
+    display: block !important;
+    overflow: hidden !important;
+    background: var(--surface, #151a16) !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    overscroll-behavior: none !important;
+  }
+  .composer {
+    box-sizing: border-box !important;
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: max(8px, env(safe-area-inset-top)) 14px max(8px, env(safe-area-inset-bottom)) !important;
+    display: grid !important;
+    grid-template-rows: auto auto minmax(90px, 1fr) auto !important;
+    gap: 10px !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: var(--surface, #151a16) !important;
+    color: var(--text, #f2f3ef) !important;
+    transform: none !important;
+  }
+  .composerHandle { display: none !important; }
+  .composerTopbar { display: grid !important; grid-template-columns: 48px minmax(0,1fr) 48px !important; align-items: center !important; gap: 8px !important; padding: 0 !important; }
+  .composerTitle { min-width: 0 !important; text-align: center !important; }
+  .composerTitle small { display: block !important; font-size: 10px !important; letter-spacing: .12em !important; opacity: .65 !important; }
+  .composerTitle strong { display: block !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  .composerIconButton { width: 48px !important; height: 48px !important; display: grid !important; place-items: center !important; padding: 0 !important; border-radius: 14px !important; }
+  .composerTopbarSpacer { width: 48px !important; height: 48px !important; }
+  .composerVerse { max-height: 4.8em !important; overflow: auto !important; padding: 10px 12px !important; border-radius: 12px !important; background: rgba(127,127,127,.11) !important; font-size: 14px !important; line-height: 1.55 !important; }
+  .composer textarea { box-sizing: border-box !important; width: 100% !important; height: 100% !important; min-height: 90px !important; margin: 0 !important; padding: 14px !important; resize: none !important; border-radius: 14px !important; font: inherit !important; font-size: 16px !important; line-height: 1.55 !important; opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; -webkit-appearance: none !important; }
+  .composer footer { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 10px !important; min-height: 48px !important; padding: 0 !important; }
+  .composer footer span { min-width: 0 !important; font-size: 12px !important; opacity: .65 !important; }
+  .composer footer button { min-height: 48px !important; padding: 0 18px !important; display: inline-flex !important; align-items: center !important; gap: 7px !important; border-radius: 14px !important; white-space: nowrap !important; }
+}
+`;
 const chapterKey = (chapter) => `${chapter.book}.${chapter.chapter}`;
+
+function readReadingPosition() {
+  try {
+    return JSON.parse(localStorage.getItem(READING_POSITION_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
 
 function readNotes() {
   try {
@@ -62,18 +123,24 @@ function App() {
   const scrollAnchor = useRef(null);
   const jumpTarget = useRef(null);
   const previousScrollTop = useRef(0);
-  const chaptersRef = useRef([]);
-  const queuedDirection = useRef(0);
-  const activeChapterRequest = useRef('');
+  const positionTimer = useRef(null);
+  const restorePosition = useRef(readReadingPosition());
 
   useEffect(() => {
     const controller = new AbortController();
     (async () => {
       try {
         const loadedManifest = await getManifest(controller.signal);
-        const verses = await getChapter('GEN', 1, controller.signal);
+        const savedPosition = restorePosition.current;
+        const [savedBook, savedChapter] = savedPosition?.id?.split('.') || [];
+        const savedMeta = loadedManifest.books.find((item) => item.code === savedBook);
+        const validChapter = Number(savedChapter) >= 1 && Number(savedChapter) <= (savedMeta?.chapters || 0);
+        const book = savedMeta && validChapter ? savedBook : 'GEN';
+        const chapter = savedMeta && validChapter ? Number(savedChapter) : 1;
+        const verses = await getChapter(book, chapter, controller.signal);
         setManifest(loadedManifest);
-        setChapters([{ book: 'GEN', chapter: 1, verses }]);
+        setSelectedBook(book);
+        setChapters([{ book, chapter, verses }]);
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       }
@@ -95,8 +162,6 @@ function App() {
     }, 250);
     return () => clearTimeout(saveTimer.current);
   }, [notes]);
-
-  useEffect(() => { chaptersRef.current = chapters; }, [chapters]);
 
   const adjacentChapter = useCallback(
     (current, direction) => {
@@ -152,60 +217,37 @@ function App() {
 
   const loadAdjacent = useCallback(
     async (direction) => {
-      const currentChapters = chaptersRef.current;
-      if (query || !currentChapters.length) return;
-      if (loading.current) {
-        // Do not lose a fast upward gesture while a downward request is finishing.
-        queuedDirection.current = direction;
-        return;
-      }
-
-      const edge = direction > 0 ? currentChapters.at(-1) : currentChapters[0];
+      if (loading.current || query || !chapters.length) return;
+      const edge = direction > 0 ? chapters.at(-1) : chapters[0];
       const target = adjacentChapter(edge, direction);
       if (!target) return;
-      const targetKey = chapterKey(target);
-      if (activeChapterRequest.current === targetKey || currentChapters.some((item) => chapterKey(item) === targetKey)) return;
 
       loading.current = true;
-      activeChapterRequest.current = targetKey;
       setBusy(direction > 0 ? 'down' : 'up');
       setError('');
-      const controller = new AbortController();
-      requestController.current = controller;
+      requestController.current?.abort();
+      requestController.current = new AbortController();
 
       try {
-        const verses = await getChapter(target.book, target.chapter, controller.signal);
-        if (controller.signal.aborted) return;
-        setChapters((current) => {
-          const liveEdge = direction > 0 ? current.at(-1) : current[0];
-          if (!liveEdge || chapterKey(liveEdge) !== chapterKey(edge)) return current;
-          if (current.some((item) => chapterKey(item) === targetKey)) return current;
-
-          const anchor = captureScrollAnchor();
-          const next = direction > 0
-            ? [...current, { ...target, verses }]
-            : [{ ...target, verses }, ...current];
-          const trimmed = direction > 0
-            ? next.slice(-CHAPTER_LIMIT)
-            : next.slice(0, CHAPTER_LIMIT);
-
-          // Prepending changes scrollHeight. Restore the same visible verse after render.
-          if (direction < 0 || next.length > CHAPTER_LIMIT) scrollAnchor.current = anchor;
-          chaptersRef.current = trimmed;
-          return trimmed;
-        });
+        const verses = await getChapter(
+          target.book,
+          target.chapter,
+          requestController.current.signal,
+        );
+        scrollAnchor.current = captureScrollAnchor();
+        setChapters((current) =>
+          direction > 0
+            ? [...current, { ...target, verses }].slice(-CHAPTER_LIMIT)
+            : [{ ...target, verses }, ...current].slice(0, CHAPTER_LIMIT),
+        );
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       } finally {
-        activeChapterRequest.current = '';
         loading.current = false;
         setBusy('');
-        const pending = queuedDirection.current;
-        queuedDirection.current = 0;
-        if (pending) requestAnimationFrame(() => loadAdjacent(pending));
       }
     },
-    [adjacentChapter, query],
+    [adjacentChapter, chapters, query],
   );
 
   useEffect(() => {
@@ -218,12 +260,17 @@ function App() {
         const currentTop = element.scrollTop;
         const movingDown = currentTop >= previousScrollTop.current;
         previousScrollTop.current = currentTop;
+        clearTimeout(positionTimer.current);
+        positionTimer.current = window.setTimeout(() => {
+          const anchor = captureScrollAnchor();
+          if (anchor) localStorage.setItem(READING_POSITION_KEY, JSON.stringify(anchor));
+        }, 150);
         if (
           movingDown &&
           element.scrollHeight - currentTop - element.clientHeight < 700
         ) {
           loadAdjacent(1);
-        } else if (currentTop < 900 && (!movingDown || currentTop <= 8)) {
+        } else if (!movingDown && currentTop < 360) {
           loadAdjacent(-1);
         }
       });
@@ -232,18 +279,22 @@ function App() {
     handleScroll();
     return () => {
       cancelAnimationFrame(frame);
+      clearTimeout(positionTimer.current);
       element.removeEventListener('scroll', handleScroll);
     };
   }, [loadAdjacent]);
 
   useEffect(() => {
     const element = scroller.current;
-    if (!element || loading.current || query || !chapters.length) return;
-    const bottomDistance = element.scrollHeight - element.scrollTop - element.clientHeight;
-    // A completed prepend may not emit another scroll event, so check again here.
-    if (element.scrollTop < 900) loadAdjacent(-1);
-    else if (bottomDistance < 900) loadAdjacent(1);
-  }, [chapters, loadAdjacent, query]);
+    if (
+      element &&
+      chapters.length === 1 &&
+      !loading.current &&
+      element.scrollHeight < element.clientHeight + 700
+    ) {
+      loadAdjacent(1);
+    }
+  }, [chapters, loadAdjacent]);
 
   const goToVerse = useCallback(async (book, chapter, verse = 1) => {
     requestController.current?.abort();
@@ -252,11 +303,10 @@ function App() {
     setError('');
     try {
       const verses = await getChapter(book, chapter);
+      restorePosition.current = null;
       jumpTarget.current = `${book}.${chapter}.${verse}`;
-      const nextChapters = [{ book, chapter, verses }];
-      chaptersRef.current = nextChapters;
-      queuedDirection.current = 0;
-      setChapters(nextChapters);
+      localStorage.setItem(READING_POSITION_KEY, JSON.stringify({ id: jumpTarget.current, offset: 0 }));
+      setChapters([{ book, chapter, verses }]);
       setPickerOpen(false);
       setDrawerOpen(false);
     } catch (err) {
@@ -268,13 +318,26 @@ function App() {
   }, []);
 
   useLayoutEffect(() => {
-    if (!jumpTarget.current || !chapters.length) return;
+    if (!chapters.length) return;
     requestAnimationFrame(() => {
-      scroller.current
-        ?.querySelector(`[data-id="${CSS.escape(jumpTarget.current)}"]`)
-        ?.scrollIntoView({ block: 'center' });
-      previousScrollTop.current = scroller.current?.scrollTop || 0;
-      jumpTarget.current = null;
+      const host = scroller.current;
+      const savedPosition = restorePosition.current;
+      if (host && savedPosition?.id) {
+        const node = host.querySelector(`[data-id="${CSS.escape(savedPosition.id)}"]`);
+        if (node) {
+          const hostTop = host.getBoundingClientRect().top;
+          host.scrollTop += node.getBoundingClientRect().top - hostTop - (savedPosition.offset || 0);
+          previousScrollTop.current = host.scrollTop;
+          restorePosition.current = null;
+          return;
+        }
+      }
+      if (jumpTarget.current) {
+        host?.querySelector(`[data-id="${CSS.escape(jumpTarget.current)}"]`)
+          ?.scrollIntoView({ block: 'center' });
+        previousScrollTop.current = host?.scrollTop || 0;
+        jumpTarget.current = null;
+      }
     });
   }, [chapters]);
 
@@ -335,6 +398,7 @@ function App() {
 
   return (
     <main>
+      <style>{MOBILE_NOTE_CSS}</style>
       <header className="top">
         <div className="brand"><i><BookOpen /></i><b>Parallel Bible<small>ESV · 新譯本 · Notes</small></b></div>
         <label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search / 搜尋" /></label>
@@ -376,7 +440,7 @@ function App() {
 
       {pickerOpen && <Picker manifest={manifest} selectedBook={selectedBook} setSelectedBook={setSelectedBook} close={() => setPickerOpen(false)} go={goToVerse} />}
       {drawerOpen && <NotesDrawer items={noteItems} close={() => setDrawerOpen(false)} go={goToVerse} />}
-      {composerVerse && <MobileComposer verse={composerVerse} value={draft} setValue={setDraft} close={() => setComposerVerse(null)} save={saveComposer} />}
+      {composerVerse && <MobileComposer verse={composerVerse} value={draft} setValue={setDraft} close={() => setComposerVerse(null)} save={saveComposer} backgroundRef={scroller} />}
     </main>
   );
 }
@@ -397,10 +461,58 @@ function NotesDrawer({ items, close, go }) {
   return <div className="shade drawerShade" onMouseDown={(event) => event.target === event.currentTarget && close()}><aside className="drawer"><ModalHead title="My Notes" subtitle={`${items.length} notes · 按書卷、章、節排序`} close={close} /><div className="list">{items.length ? items.map((item) => { const group = `${item.book}.${item.chapter}`; const heading = group !== lastGroup; lastGroup = group; return <React.Fragment key={`${group}.${item.verse}`}>{heading && <div className="noteGroup">{item.title.split(':')[0]} · {item.zh.split(':')[0]}</div>}<button onClick={() => go(item.book, item.chapter, item.verse)}><i><StickyNote /></i><span><b>{item.title}</b><small>{item.zh}</small><p>{item.text}</p></span><ChevronRight /></button></React.Fragment>; }) : <div className="empty"><StickyNote /><b>No notes yet</b><span>Your verse notes will appear here.</span></div>}</div></aside></div>;
 }
 
-function MobileComposer({ verse, value, setValue, close, save }) {
+function MobileComposer({ verse, value, setValue, close, save, backgroundRef }) {
   const input = useRef(null);
-  useEffect(() => { input.current?.focus(); }, []);
-  return <div className="composerShade" onMouseDown={(event) => event.target === event.currentTarget && close()}><section className="composer" role="dialog" aria-modal="true" aria-label={`Note for ${verse.ref}`}><div className="composerHandle" /><header><button onClick={close} aria-label="Cancel"><X /></button><div><small>{verse.bookNameZh} · {verse.chapter}:{verse.verse}</small><strong>{verse.zh}</strong></div><button className="saveNote" onClick={save} aria-label="Save note"><Send /></button></header><textarea ref={input} value={value} onChange={(event) => setValue(event.target.value)} placeholder="寫下筆記…" /><footer><span>筆記將連結至 {verse.bookNameZh} {verse.chapter}:{verse.verse}</span><button onClick={save}><Check />完成</button></footer></section></div>;
+  const [viewport, setViewport] = useState(() => ({
+    height: Math.round(window.visualViewport?.height || window.innerHeight),
+    top: Math.round(window.visualViewport?.offsetTop || 0),
+  }));
+
+  useLayoutEffect(() => {
+    const vv = window.visualViewport;
+    const update = () => setViewport({
+      height: Math.round(vv?.height || window.innerHeight),
+      top: Math.round(vv?.offsetTop || 0),
+    });
+    const reader = backgroundRef?.current;
+    const bodyOverflow = document.body.style.overflow;
+    const htmlOverflow = document.documentElement.style.overflow;
+    document.documentElement.classList.add('noteOpen');
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    reader?.setAttribute('inert', '');
+    update();
+    vv?.addEventListener('resize', update);
+    vv?.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    return () => {
+      vv?.removeEventListener('resize', update);
+      vv?.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      document.documentElement.classList.remove('noteOpen');
+      document.body.style.overflow = bodyOverflow;
+      document.documentElement.style.overflow = htmlOverflow;
+      reader?.removeAttribute('inert');
+    };
+  }, [backgroundRef]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => input.current?.focus({ preventScroll: true }), 120);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  return <div className="composerShade" style={{ '--note-height': `${viewport.height}px`, '--note-top': `${viewport.top}px` }} onPointerDown={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()}>
+    <section className="composer" role="dialog" aria-modal="true" aria-label={`Note for ${verse.ref || `${verse.bookNameZh} ${verse.chapter}:${verse.verse}`}`}>
+      <header className="composerTopbar">
+        <button className="composerIconButton" onClick={close} aria-label="Cancel"><X /></button>
+        <div className="composerTitle"><small>NOTE · 筆記</small><strong>{verse.bookNameZh} {verse.chapter}:{verse.verse}</strong></div>
+        <span className="composerTopbarSpacer" aria-hidden="true" />
+      </header>
+      <div className="composerVerse" lang="zh-Hant">{verse.zh}</div>
+      <textarea ref={input} value={value} onChange={(event) => setValue(event.target.value)} placeholder="寫下你的筆記…" aria-label={`Note for ${verse.bookNameZh} ${verse.chapter}:${verse.verse}`} />
+      <footer><span>{value.length ? `${value.length} 字元` : '只儲存在此裝置'}</span><button onClick={save}><Check />儲存筆記</button></footer>
+    </section>
+  </div>;
 }
 
 function ModalHead({ title, subtitle, close }) { return <header className="modalhead"><div><b>{title}</b><small>{subtitle}</small></div><button onClick={close}><X /></button></header>; }
