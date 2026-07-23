@@ -123,7 +123,6 @@ jobs:
         working-directory: ${{ steps.project.outputs.dir }}
         shell: bash
         run: |
-          find dist -maxdepth 3 -type f | sort | head -200
           test -f dist/index.html
           test -f dist/bible/manifest.json
           test -f dist/bible/GEN/1.json
