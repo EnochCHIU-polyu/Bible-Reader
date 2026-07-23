@@ -4,7 +4,6 @@ import{createRoot}from'react-dom/client';
 import{BookOpen,Library,StickyNote,Search,Moon,Sun,X,ChevronRight,Check,AlertTriangle,LoaderCircle,Languages,Send}from'lucide-react';
 import{getManifest,getChapter}from'./services/bibleData';
 import'./styles.css';
-
 const N='parallel-notes-v6',T='parallel-theme-v6',LIMIT=2;
 const k=x=>`${x.book}.${x.chapter}`;
 function App(){
