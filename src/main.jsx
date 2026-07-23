@@ -28,7 +28,8 @@ import './styles.css';
 
 const NOTES_KEY = 'parallel-notes-v6';
 const THEME_KEY = 'parallel-theme-v6';
-const CHAPTER_LIMIT = 2;
+const READING_POSITION_KEY = 'parallel-reading-position-v1';
+const CHAPTER_LIMIT = 6;
 
 const MOBILE_COMPOSER_CSS = `
 @media (max-width: 850px) {
@@ -43,6 +44,7 @@ const MOBILE_COMPOSER_CSS = `
   .composerTitle strong { display:block!important; overflow:hidden!important; text-overflow:ellipsis!important; white-space:nowrap!important; font-size:16px!important; }
   .composerIconButton { width:48px!important; height:48px!important; display:grid!important; place-items:center!important; padding:0!important; border-radius:15px!important; touch-action:manipulation; }
   .composerIconButton svg { width:24px!important; height:24px!important; }
+  .composerTopbarSpacer { width:48px!important; height:48px!important; }
   .composerVerse { flex:0 0 auto!important; max-height:4.6em!important; overflow:auto!important; padding:10px 12px!important; border-radius:12px!important; font-size:14px!important; line-height:1.55!important; background:rgba(127,127,127,.1)!important; opacity:.82!important; }
   .composer textarea { box-sizing:border-box!important; flex:1 1 auto!important; min-height:96px!important; width:100%!important; resize:none!important; padding:14px!important; border-radius:14px!important; font:inherit!important; font-size:16px!important; line-height:1.55!important; -webkit-appearance:none; }
   .composer footer { flex:0 0 auto!important; display:flex!important; align-items:center!important; justify-content:space-between!important; gap:12px!important; padding:0!important; }
@@ -54,6 +56,14 @@ const MOBILE_COMPOSER_CSS = `
 }
 `;
 const chapterKey = (chapter) => `${chapter.book}.${chapter.chapter}`;
+
+function readReadingPosition() {
+  try {
+    return JSON.parse(localStorage.getItem(READING_POSITION_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
 
 function readNotes() {
   try {
@@ -86,15 +96,23 @@ function App() {
   const scrollAnchor = useRef(null);
   const jumpTarget = useRef(null);
   const previousScrollTop = useRef(0);
+  const pendingDirection = useRef(0);
+  const positionTimer = useRef(null);
+  const restorePosition = useRef(readReadingPosition());
 
   useEffect(() => {
     const controller = new AbortController();
     (async () => {
       try {
         const loadedManifest = await getManifest(controller.signal);
-        const verses = await getChapter('GEN', 1, controller.signal);
+        const savedPosition = restorePosition.current;
+        const [savedBook, savedChapter] = savedPosition?.id?.split('.') || [];
+        const validBook = loadedManifest.books.some((book) => book.code === savedBook);
+        const book = validBook ? savedBook : 'GEN';
+        const chapter = validBook && Number(savedChapter) > 0 ? Number(savedChapter) : 1;
+        const verses = await getChapter(book, chapter, controller.signal);
         setManifest(loadedManifest);
-        setChapters([{ book: 'GEN', chapter: 1, verses }]);
+        setChapters([{ book, chapter, verses }]);
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       }
@@ -171,7 +189,11 @@ function App() {
 
   const loadAdjacent = useCallback(
     async (direction) => {
-      if (loading.current || query || !chapters.length) return;
+      if (query || !chapters.length) return;
+      if (loading.current) {
+        pendingDirection.current = direction;
+        return;
+      }
       const edge = direction > 0 ? chapters.at(-1) : chapters[0];
       const target = adjacentChapter(edge, direction);
       if (!target) return;
@@ -199,6 +221,13 @@ function App() {
       } finally {
         loading.current = false;
         setBusy('');
+        // A fast swipe can reach the edge while a request is still running.
+        // Remember that direction and trigger another boundary check after render.
+        if (pendingDirection.current) {
+          const queuedDirection = pendingDirection.current;
+          pendingDirection.current = 0;
+          window.setTimeout(() => loadAdjacent(queuedDirection), 0);
+        }
       }
     },
     [adjacentChapter, chapters, query],
@@ -214,6 +243,13 @@ function App() {
         const currentTop = element.scrollTop;
         const movingDown = currentTop >= previousScrollTop.current;
         previousScrollTop.current = currentTop;
+
+        clearTimeout(positionTimer.current);
+        positionTimer.current = window.setTimeout(() => {
+          const anchor = captureScrollAnchor();
+          if (anchor) localStorage.setItem(READING_POSITION_KEY, JSON.stringify(anchor));
+        }, 120);
+
         if (
           movingDown &&
           element.scrollHeight - currentTop - element.clientHeight < 700
@@ -228,21 +264,20 @@ function App() {
     handleScroll();
     return () => {
       cancelAnimationFrame(frame);
+      clearTimeout(positionTimer.current);
       element.removeEventListener('scroll', handleScroll);
     };
   }, [loadAdjacent]);
 
   useEffect(() => {
     const element = scroller.current;
-    if (
-      element &&
-      chapters.length === 1 &&
-      !loading.current &&
-      element.scrollHeight < element.clientHeight + 700
-    ) {
-      loadAdjacent(1);
-    }
-  }, [chapters, loadAdjacent]);
+    if (!element || loading.current || query) return;
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    // Re-check after every chapter render. This prevents a fast swipe from
+    // getting stuck when no new scroll event fires after loading completes.
+    if (distanceFromBottom < 900) loadAdjacent(1);
+    else if (element.scrollTop < 260 && chapters.length > 1) loadAdjacent(-1);
+  }, [chapters, loadAdjacent, query]);
 
   const goToVerse = useCallback(async (book, chapter, verse = 1) => {
     requestController.current?.abort();
@@ -251,6 +286,7 @@ function App() {
     setError('');
     try {
       const verses = await getChapter(book, chapter);
+      restorePosition.current = null;
       jumpTarget.current = `${book}.${chapter}.${verse}`;
       setChapters([{ book, chapter, verses }]);
       setPickerOpen(false);
@@ -264,12 +300,26 @@ function App() {
   }, []);
 
   useLayoutEffect(() => {
-    if (!jumpTarget.current || !chapters.length) return;
+    if (!chapters.length) return;
     requestAnimationFrame(() => {
-      scroller.current
-        ?.querySelector(`[data-id="${CSS.escape(jumpTarget.current)}"]`)
-        ?.scrollIntoView({ block: 'center' });
-      jumpTarget.current = null;
+      const savedPosition = restorePosition.current;
+      if (savedPosition?.id) {
+        const host = scroller.current;
+        const node = host?.querySelector(`[data-id="${CSS.escape(savedPosition.id)}"]`);
+        if (host && node) {
+          const hostTop = host.getBoundingClientRect().top;
+          host.scrollTop += node.getBoundingClientRect().top - hostTop - (savedPosition.offset || 0);
+          previousScrollTop.current = host.scrollTop;
+          restorePosition.current = null;
+          return;
+        }
+      }
+      if (jumpTarget.current) {
+        scroller.current
+          ?.querySelector(`[data-id="${CSS.escape(jumpTarget.current)}"]`)
+          ?.scrollIntoView({ block: 'center' });
+        jumpTarget.current = null;
+      }
     });
   }, [chapters]);
 
@@ -431,7 +481,7 @@ function MobileComposer({ verse, value, setValue, close, save }) {
       <header className="composerTopbar">
         <button className="composerIconButton" onClick={close} aria-label="Cancel"><X /></button>
         <div className="composerTitle"><small>NOTE · 筆記</small><strong>{verse.bookNameZh} {verse.chapter}:{verse.verse}</strong></div>
-        <button className="saveNote composerIconButton" onClick={save} aria-label="Save note"><Check /></button>
+        <span className="composerTopbarSpacer" aria-hidden="true" />
       </header>
       <div className="composerVerse" lang="zh-Hant">{verse.zh}</div>
       <textarea ref={input} value={value} onChange={(event) => setValue(event.target.value)} placeholder="寫下你的筆記…" aria-label={`Note for ${verse.bookNameZh} ${verse.chapter}:${verse.verse}`} />
