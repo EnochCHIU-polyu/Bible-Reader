@@ -193,13 +193,47 @@ const MOBILE_NOTE_CSS = `
 `;
 
 const NOTE_DELETE_CSS = `
+:root {
+  --note-card-bg: #151a16;
+  --note-card-text: #f1f3ef;
+  --note-card-muted: rgba(241,243,239,.58);
+  --note-card-border: rgba(255,255,255,.08);
+  --note-group-bg: rgba(255,255,255,.025);
+  --note-group-border: rgba(255,255,255,.10);
+  --note-icon-bg: #dcc276;
+  --note-icon-color: #171a15;
+  --note-delete-bg: #b42318;
+}
+:root[data-theme='light'] {
+  --note-card-bg: #ffffff;
+  --note-card-text: #20231f;
+  --note-card-muted: #747a72;
+  --note-card-border: rgba(31,35,30,.10);
+  --note-group-bg: #fbfaf6;
+  --note-group-border: rgba(31,35,30,.12);
+  --note-icon-bg: #e3c979;
+  --note-icon-color: #24271f;
+  --note-delete-bg: #c52a20;
+}
+.drawer .list .noteGroup {
+  box-sizing: border-box !important;
+  margin: 12px 14px 8px !important;
+  padding: 12px 16px !important;
+  border: 1px solid var(--note-group-border) !important;
+  border-radius: 16px !important;
+  color: var(--note-card-text) !important;
+  background: var(--note-group-bg) !important;
+}
 .noteSwipeRow {
   position: relative;
-  width: 100%;
+  width: auto;
   min-height: 112px;
+  margin: 0 14px 10px;
   overflow: hidden;
-  border-bottom: 1px solid var(--line, rgba(127,127,127,.14));
-  background: #b42318;
+  border: 1px solid var(--note-card-border);
+  border-radius: 18px;
+  background: var(--note-card-bg);
+  isolation: isolate;
 }
 .drawer .list .noteSwipeRow .noteSwipeDelete {
   box-sizing: border-box !important;
@@ -208,9 +242,9 @@ const NOTE_DELETE_CSS = `
   top: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  width: 86px !important;
+  width: 88px !important;
   height: 100% !important;
-  min-width: 86px !important;
+  min-width: 88px !important;
   margin: 0 !important;
   padding: 0 8px !important;
   display: flex !important;
@@ -221,24 +255,12 @@ const NOTE_DELETE_CSS = `
   border: 0 !important;
   border-radius: 0 !important;
   color: #fff !important;
-  background: #b42318 !important;
+  background: var(--note-delete-bg) !important;
   box-shadow: none !important;
   text-align: center !important;
 }
-.drawer .list .noteSwipeRow .noteSwipeDelete svg {
-  width: 22px !important;
-  height: 22px !important;
-  margin: 0 !important;
-  color: currentColor !important;
-}
-.drawer .list .noteSwipeRow .noteSwipeDelete span {
-  display: block !important;
-  min-width: 0 !important;
-  color: currentColor !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  line-height: 1 !important;
-}
+.drawer .list .noteSwipeRow .noteSwipeDelete svg { width: 22px !important; height: 22px !important; margin: 0 !important; }
+.drawer .list .noteSwipeRow .noteSwipeDelete span { display: block !important; min-width: 0 !important; color: #fff !important; font-size: 12px !important; font-weight: 700 !important; line-height: 1 !important; }
 .drawer .list .noteSwipeRow .noteSwipeContent {
   box-sizing: border-box !important;
   position: relative !important;
@@ -246,83 +268,45 @@ const NOTE_DELETE_CSS = `
   width: 100% !important;
   min-height: 112px !important;
   margin: 0 !important;
-  padding: 18px 18px !important;
+  padding: 18px !important;
   display: grid !important;
-  grid-template-columns: 42px minmax(0,1fr) 20px !important;
+  grid-template-columns: 44px minmax(0,1fr) 20px !important;
   align-items: start !important;
   gap: 14px !important;
   border: 0 !important;
-  border-radius: 0 !important;
-  color: inherit !important;
-  background: var(--surface, #151a16) !important;
+  border-radius: 17px !important;
+  color: var(--note-card-text) !important;
+  background: var(--note-card-bg) !important;
   box-shadow: none !important;
   text-align: left !important;
-  transform: translate3d(var(--note-swipe-x, 0px),0,0) !important;
-  transition: transform 180ms cubic-bezier(.2,.8,.2,1) !important;
+  transform: translate3d(var(--note-swipe-x,0px),0,0) !important;
+  transition: transform 240ms cubic-bezier(.22,1,.36,1) !important;
   touch-action: pan-y !important;
   will-change: transform;
 }
-.drawer .list .noteSwipeRow .noteSwipeContent.isDragging {
-  transition: none !important;
-}
+.drawer .list .noteSwipeRow .noteSwipeContent.isDragging { transition: none !important; }
 .drawer .list .noteSwipeRow .noteSwipeContent > i {
   box-sizing: border-box !important;
-  width: 42px !important;
-  height: 42px !important;
+  width: 44px !important;
+  height: 44px !important;
   margin: 0 !important;
   display: grid !important;
   place-items: center !important;
-  border-radius: 12px !important;
+  border-radius: 14px !important;
+  color: var(--note-icon-color) !important;
+  background: var(--note-icon-bg) !important;
+  box-shadow: 0 8px 20px rgba(0,0,0,.12) !important;
 }
-.drawer .list .noteSwipeRow .noteSwipeContent > i svg {
-  width: 20px !important;
-  height: 20px !important;
-}
-.drawer .list .noteSwipeRow .noteSwipeContent > span {
-  display: block !important;
-  min-width: 0 !important;
-  color: inherit !important;
-}
+.drawer .list .noteSwipeRow .noteSwipeContent > i svg { width: 20px !important; height: 20px !important; }
+.drawer .list .noteSwipeRow .noteSwipeContent > span { display: block !important; min-width: 0 !important; color: var(--note-card-text) !important; }
 .drawer .list .noteSwipeRow .noteSwipeContent b,
 .drawer .list .noteSwipeRow .noteSwipeContent small,
-.drawer .list .noteSwipeRow .noteSwipeContent p {
-  display: block !important;
-  width: auto !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  color: inherit !important;
-  text-align: left !important;
-}
-.drawer .list .noteSwipeRow .noteSwipeContent b {
-  font-size: 15px !important;
-  line-height: 1.35 !important;
-}
-.drawer .list .noteSwipeRow .noteSwipeContent small {
-  margin-top: 3px !important;
-  font-size: 12px !important;
-  line-height: 1.35 !important;
-  opacity: .62 !important;
-}
-.drawer .list .noteSwipeRow .noteSwipeContent p {
-  margin-top: 9px !important;
-  overflow: hidden !important;
-  display: -webkit-box !important;
-  -webkit-box-orient: vertical !important;
-  -webkit-line-clamp: 2 !important;
-  font-size: 14px !important;
-  line-height: 1.45 !important;
-  opacity: .82 !important;
-}
-.drawer .list .noteSwipeRow .noteSwipeContent > svg {
-  align-self: center !important;
-  width: 18px !important;
-  height: 18px !important;
-  margin: 0 !important;
-  opacity: .42 !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .drawer .list .noteSwipeRow .noteSwipeContent { transition: none !important; }
-}
+.drawer .list .noteSwipeRow .noteSwipeContent p { display: block !important; width: auto !important; margin: 0 !important; padding: 0 !important; text-align: left !important; }
+.drawer .list .noteSwipeRow .noteSwipeContent b { color: var(--note-card-text) !important; font-size: 15px !important; line-height: 1.35 !important; }
+.drawer .list .noteSwipeRow .noteSwipeContent small { margin-top: 3px !important; color: var(--note-card-muted) !important; font-size: 12px !important; line-height: 1.35 !important; }
+.drawer .list .noteSwipeRow .noteSwipeContent p { margin-top: 9px !important; overflow: hidden !important; display: -webkit-box !important; -webkit-box-orient: vertical !important; -webkit-line-clamp: 2 !important; color: var(--note-card-text) !important; font-size: 14px !important; line-height: 1.45 !important; opacity: .84 !important; }
+.drawer .list .noteSwipeRow .noteSwipeContent > svg { align-self: center !important; width: 18px !important; height: 18px !important; margin: 0 !important; color: var(--note-card-muted) !important; opacity: .72 !important; }
+@media (prefers-reduced-motion: reduce) { .drawer .list .noteSwipeRow .noteSwipeContent { transition: none !important; } }
 `;
 const chapterKey = (chapter) => `${chapter.book}.${chapter.chapter}`;
 
@@ -782,21 +766,18 @@ function NotesDrawer({ items, close, go, onDelete }) {
     return <React.Fragment key={id}>{heading && <div className="noteGroup">{item.title.split(':')[0]} · {item.zh.split(':')[0]}</div>}<SwipeNoteItem item={item} open={() => go(item.book, item.chapter, item.verse)} remove={() => onDelete(id)} /></React.Fragment>;
   }) : <div className="empty"><StickyNote /><b>No notes yet</b><span>Your verse notes will appear here.</span></div>}</div></aside></div>;
 }
-
 function SwipeNoteItem({ item, open, remove }) {
-  const DELETE_WIDTH = 86;
+  const DELETE_WIDTH = 88;
   const gesture = useRef({ id: null, x: 0, y: 0, offset: 0, horizontal: false });
   const suppressClick = useRef(false);
   const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
-
   const begin = (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, offset, horizontal: false };
     suppressClick.current = false;
     setDragging(true);
   };
-
   const move = (event) => {
     const current = gesture.current;
     if (current.id !== event.pointerId) return;
@@ -811,29 +792,18 @@ function SwipeNoteItem({ item, open, remove }) {
     }
     setOffset(Math.max(-DELETE_WIDTH, Math.min(0, current.offset + dx)));
   };
-
   const end = (event) => {
     if (gesture.current.id !== event.pointerId) return;
     gesture.current.id = null;
     setDragging(false);
     setOffset((value) => value <= -DELETE_WIDTH * .38 ? -DELETE_WIDTH : 0);
   };
-
   const activate = () => {
-    if (suppressClick.current) {
-      suppressClick.current = false;
-      return;
-    }
+    if (suppressClick.current) { suppressClick.current = false; return; }
     if (offset < 0) setOffset(0);
     else open();
   };
-
-  return <div className="noteSwipeRow">
-    <button type="button" className="noteSwipeDelete" onClick={remove} aria-label={`Delete ${item.title}`}><Trash2 /><span>Delete</span></button>
-    <button type="button" className={`noteSwipeContent ${dragging ? 'isDragging' : ''}`} style={{ '--note-swipe-x': `${offset}px` }} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onClick={activate}>
-      <i><StickyNote /></i><span><b>{item.title}</b><small>{item.zh}</small><p>{item.text}</p></span><ChevronRight />
-    </button>
-  </div>;
+  return <div className="noteSwipeRow"><button type="button" className="noteSwipeDelete" onClick={remove} aria-label={`Delete ${item.title}`}><Trash2 /><span>Delete</span></button><button type="button" className={`noteSwipeContent ${dragging ? 'isDragging' : ''}`} style={{ '--note-swipe-x': `${offset}px` }} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onClick={activate}><i><StickyNote /></i><span><b>{item.title}</b><small>{item.zh}</small><p>{item.text}</p></span><ChevronRight /></button></div>;
 }
 
 function MobileComposer({ verse, value, setValue, close, save, backgroundRef }) {
