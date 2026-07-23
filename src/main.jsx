@@ -34,8 +34,8 @@ const READING_POSITION_KEY = 'parallel-reading-position-v1';
 const MOBILE_LOCKED_HEADER_CSS = `
 @media (max-width: 850px) {
   :root {
-    --phone-safe-top: max(env(safe-area-inset-top, 0px), 44px);
-    --phone-header-bar: 72px;
+    --phone-safe-top: max(env(safe-area-inset-top, 0px), 20px);
+    --phone-header-bar: 64px;
     --phone-header-height: calc(var(--phone-safe-top) + var(--phone-header-bar));
   }
 
@@ -57,7 +57,7 @@ const MOBILE_LOCKED_HEADER_CSS = `
     height: var(--phone-header-height) !important;
     min-height: var(--phone-header-height) !important;
     margin: 0 !important;
-    padding: var(--phone-safe-top) 10px 8px !important;
+    padding: var(--phone-safe-top) 10px 4px !important;
     display: flex !important;
     align-items: center !important;
     gap: 7px !important;
