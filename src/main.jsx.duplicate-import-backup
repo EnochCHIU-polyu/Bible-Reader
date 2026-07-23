@@ -1,34 +1,378 @@
-import { getManifest, getChapter } from './services/bibleData'
-import React,{useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState}from'react';
-import{createRoot}from'react-dom/client';
-import{BookOpen,Library,StickyNote,Search,Moon,Sun,X,ChevronRight,Check,AlertTriangle,LoaderCircle,Languages,Send}from'lucide-react';
-import{getManifest,getChapter}from'./services/bibleData';
-import'./styles.css';
-const N='parallel-notes-v6',T='parallel-theme-v6',LIMIT=2;
-const k=x=>`${x.book}.${x.chapter}`;
-function App(){
- const[m,setM]=useState(),[chapters,setChapters]=useState([]),[notes,setNotes]=useState(()=>{try{return JSON.parse(localStorage.getItem(N)||'{}')}catch{return{}}}),[picker,setPicker]=useState(false),[drawer,setDrawer]=useState(false),[sel,setSel]=useState('GEN'),[theme,setTheme]=useState(localStorage.getItem(T)||'light'),[err,setErr]=useState(''),[q,setQ]=useState(''),[saved,setSaved]=useState(true),[busy,setBusy]=useState(''),[mobileLang,setMobileLang]=useState('zh'),[compose,setCompose]=useState(null),[draft,setDraft]=useState('');
- const timer=useRef(),scroll=useRef(),loading=useRef(false),request=useRef(),anchor=useRef(),jump=useRef(),lastTop=useRef(0);
- useEffect(()=>{const c=new AbortController();(async()=>{try{const manifest=await getManifest(c.signal);const verses=await getChapter('GEN', 1, c.signal);setM(manifest);setChapters([{book:'GEN',chapter:1,verses}])}catch(e){if(e.name!=='AbortError')setErr(e.message)}})();return()=>c.abort()},[]);
- useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem(T,theme)},[theme]);
- useEffect(()=>{setSaved(false);clearTimeout(timer.current);timer.current=setTimeout(()=>{localStorage.setItem(N,JSON.stringify(notes));setSaved(true)},250);return()=>clearTimeout(timer.current)},[notes]);
- const adjacent=useCallback((current,dir)=>{if(!m)return null;const i=m.books.findIndex(b=>b.code===current.book),book=m.books[i];if(dir>0){if(current.chapter<book.chapters)return{book:current.book,chapter:current.chapter+1};return m.books[i+1]?{book:m.books[i+1].code,chapter:1}:null}if(current.chapter>1)return{book:current.book,chapter:current.chapter-1};return m.books[i-1]?{book:m.books[i-1].code,chapter:m.books[i-1].chapters}:null},[m]);
- const capture=()=>{const host=scroll.current;if(!host)return null;const top=host.getBoundingClientRect().top;const node=[...host.querySelectorAll('[data-id]')].find(n=>n.getBoundingClientRect().bottom>top+6);return node?{id:node.dataset.id,offset:node.getBoundingClientRect().top-top}:null};
- useLayoutEffect(()=>{const a=anchor.current;if(!a||!scroll.current)return;const node=scroll.current.querySelector(`[data-id="${CSS.escape(a.id)}"]`);if(node){const top=scroll.current.getBoundingClientRect().top;scroll.current.scrollTop+=node.getBoundingClientRect().top-top-a.offset}anchor.current=null},[chapters]);
- const load=useCallback(async dir=>{if(loading.current||q||!chapters.length)return;const target=adjacent(dir>0?chapters.at(-1):chapters[0],dir);if(!target)return;loading.current=true;setBusy(dir>0?'down':'up');setErr('');request.current?.abort();request.current=new AbortController();try{const verses=await getChapter(target.book, target.chapter,request.current.signal);anchor.current=capture();setChapters(old=>dir>0?[...old,{...target,verses}].slice(-LIMIT):[{...target,verses},...old].slice(0,LIMIT))}catch(e){if(e.name!=='AbortError')setErr(e.message)}finally{loading.current=false;setBusy('')}},[chapters,adjacent,q]);
- useEffect(()=>{const el=scroll.current;if(!el)return;let frame=0;const update=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{const now=el.scrollTop,down=now>=lastTop.current;lastTop.current=now;if(down&&el.scrollHeight-now-el.clientHeight<700)load(1);else if(!down&&now<360)load(-1)})};el.addEventListener('scroll',update,{passive:true});update();return()=>{cancelAnimationFrame(frame);el.removeEventListener('scroll',update)}},[load]);
- useEffect(()=>{const el=scroll.current;if(el&&chapters.length===1&&!loading.current&&el.scrollHeight<el.clientHeight+700)load(1)},[chapters,load]);
- const go=useCallback(async(book,chapter,verse=1)=>{request.current?.abort();loading.current=true;setBusy('jump');setErr('');try{const verses=await getChapter(book, chapter);jump.current=`${book}.${chapter}.${verse}`;setChapters([{book,chapter,verses}]);setPicker(false);setDrawer(false)}catch(e){setErr(e.message)}finally{loading.current=false;setBusy('')}},[]);
- useLayoutEffect(()=>{if(!jump.current||!chapters.length)return;requestAnimationFrame(()=>{scroll.current?.querySelector(`[data-id="${CSS.escape(jump.current)}"]`)?.scrollIntoView({block:'center'});jump.current=null})},[chapters]);
- const flat=useMemo(()=>chapters.flatMap(c=>c.verses),[chapters]),shown=useMemo(()=>flat.filter(x=>!q||`${x.en} ${x.zh} ${notes[x.id]||''}`.toLowerCase().includes(q.toLowerCase())),[flat,q,notes]);
- const bookOrder=useMemo(()=>new Map((m?.books||[]).map((b,i)=>[b.code,i])),[m]);
- const items=useMemo(()=>Object.entries(notes).filter(([,text])=>String(text).trim()).map(([id,text])=>{const[book,ch,vs]=id.split('.'),meta=m?.books.find(x=>x.code===book);return{book,chapter:+ch,verse:+vs,title:`${meta?.name||book} ${ch}:${vs}`,zh:`${meta?.nameZh||''} ${ch}:${vs}`,text:String(text).trim()}}).sort((a,b)=>(bookOrder.get(a.book)??999)-(bookOrder.get(b.book)??999)||a.chapter-b.chapter||a.verse-b.verse),[notes,m,bookOrder]);
- const openComposer=x=>{if(!matchMedia('(max-width:850px)').matches)return;setCompose(x);setDraft(notes[x.id]||'')};
- const saveComposer=()=>{if(!compose)return;setNotes(current=>({...current,[compose.id]:draft}));setCompose(null)};
- return <main><header className="top"><div className="brand"><i><BookOpen/></i><b>Parallel Bible<small>ESV · 新譯本 · Notes</small></b></div><label className="search"><Search/><input value={q}onChange={e=>setQ(e.target.value)}placeholder="Search / 搜尋"/></label><button className="nav"onClick={()=>setPicker(true)}><Library/>Books</button><button className="nav"onClick={()=>setDrawer(true)}><StickyNote/>Notes{items.length>0&&<em>{items.length}</em>}</button><button className="mobileLang"onClick={()=>setMobileLang(mobileLang==='zh'?'en':'zh')} aria-label="Switch Bible language"><Languages/><span>{mobileLang==='zh'?'繁中':'EN'}</span></button><button onClick={()=>setTheme(theme==='light'?'dark':'light')}>{theme==='light'?<Moon/>:<Sun/>}</button></header>{err&&<div className="error"><AlertTriangle/>{err}</div>}<section className={`reader mobile-${mobileLang}`}><div className="heads"><Head a="English" b="English Standard Version"/><Head a="繁體中文" b="中文新譯本"/><Head a="Notes" b="Free writing space">{saved&&<span><Check/>Saved</span>}</Head></div><div className="scroll"ref={scroll}>{busy==='up'&&<Loading/>}{chapters.map(section=><section className="chapterSection"key={k(section)}><div className="chapter">{section.verses[0]?.bookName} · {section.verses[0]?.bookNameZh}<strong>{section.chapter}</strong></div>{section.verses.filter(x=>shown.includes(x)).map(x=><div className={`row ${notes[x.id]?.trim()?'hasNote':''}`}key={x.id}data-id={x.id}onClick={()=>openComposer(x)}><Cell n={x.verse}kind="en">{x.en}</Cell><Cell n={x.verse}zh kind="zh">{x.zh}</Cell><div className="note"onClick={e=>e.stopPropagation()}><small>{x.chapter}:{x.verse}</small><textarea value={notes[x.id]||''}onChange={e=>setNotes({...notes,[x.id]:e.target.value})}placeholder="Write freely…"/></div><span className="mobileNoteDot"><StickyNote/></span></div>)}</section>)}{(busy==='down'||busy==='jump')&&<Loading/>}</div></section>{picker&&<Picker m={m}sel={sel}setSel={setSel}close={()=>setPicker(false)}go={go}/>} {drawer&&<Drawer items={items}close={()=>setDrawer(false)}go={go}/>} {compose&&<MobileComposer verse={compose} value={draft} setValue={setDraft} close={()=>setCompose(null)} save={saveComposer}/>}</main>}
-function Loading(){return <div className="loading"><LoaderCircle/>Loading next chapter…</div>}function Head({a,b,children}){return <header><div><b>{a}</b><small>{b}</small></div>{children}</header>}function Cell({n,zh,kind,children}){return <div className={`cell ${kind||''}`}lang={zh?'zh-Hant':'en'}><b>{n}</b><p>{children}</p></div>}
-function Picker({m,sel,setSel,close,go}){const book=m?.books.find(x=>x.code===sel)||m?.books[0];return <div className="shade"onMouseDown={e=>e.target===e.currentTarget&&close()}><section className="picker"><ModalHead title="Books & Chapters"sub="書卷與章節快速導覽"close={close}/><div className="pickbody"><div className="books"><BookCol title="Old Testament · 舊約"books={m?.books.slice(0,39)||[]} {...{sel,setSel}}/><BookCol title="New Testament · 新約"books={m?.books.slice(39)||[]} {...{sel,setSel}}/></div><aside><span className="eyebrow">CHAPTER · 章</span><h2>{book?.nameZh}</h2><p>{book?.name}</p><div className="grid">{Array.from({length:book?.chapters||0},(_,i)=><button key={i+1}onClick={()=>go(book.code,i+1)}>{i+1}</button>)}</div></aside></div></section></div>}
-function BookCol({title,books,sel,setSel}){return <div className="bookcol"><h3>{title}</h3>{books.map(x=><button key={x.code}className={sel===x.code?'active':''}onClick={()=>setSel(x.code)}><span>{x.nameZh}</span><small>{x.name}</small><ChevronRight/></button>)}</div>}
-function Drawer({items,close,go}){let last='';return <div className="shade drawerShade"onMouseDown={e=>e.target===e.currentTarget&&close()}><aside className="drawer"><ModalHead title="My Notes"sub={`${items.length} notes · 按書卷、章、節排序`}close={close}/><div className="list">{items.length?items.map(x=>{const group=`${x.book}.${x.chapter}`,heading=group!==last;last=group;return <React.Fragment key={`${group}.${x.verse}`}>{heading&&<div className="noteGroup">{x.title.split(':')[0]} · {x.zh.split(':')[0]}</div>}<button onClick={()=>go(x.book,x.chapter,x.verse)}><i><StickyNote/></i><span><b>{x.title}</b><small>{x.zh}</small><p>{x.text}</p></span><ChevronRight/></button></React.Fragment>}):<div className="empty"><StickyNote/><b>No notes yet</b><span>Your verse notes will appear here.</span></div>}</div></aside></div>}
-function MobileComposer({verse,value,setValue,close,save}){const ref=useRef();useEffect(()=>{ref.current?.focus()},[]);return <div className="composerShade"onMouseDown={e=>e.target===e.currentTarget&&close()}><section className="composer"role="dialog"aria-modal="true"aria-label={`Note for ${verse.ref}`}><div className="composerHandle"/><header><button onClick={close}aria-label="Cancel"><X/></button><div><small>{verse.bookNameZh} · {verse.chapter}:{verse.verse}</small><strong>{verse.zh}</strong></div><button className="saveNote"onClick={save}aria-label="Save note"><Send/></button></header><textarea ref={ref}value={value}onChange={e=>setValue(e.target.value)}placeholder="寫下筆記…"/><footer><span>筆記將連結至 {verse.bookNameZh} {verse.chapter}:{verse.verse}</span><button onClick={save}><Check/>完成</button></footer></section></div>}
-function ModalHead({title,sub,close}){return <header className="modalhead"><div><b>{title}</b><small>{sub}</small></div><button onClick={close}><X/></button></header>}createRoot(document.getElementById('root')).render(<App/>);
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { createRoot } from 'react-dom/client';
+import {
+  AlertTriangle,
+  BookOpen,
+  Check,
+  ChevronRight,
+  Languages,
+  Library,
+  LoaderCircle,
+  Moon,
+  Search,
+  Send,
+  StickyNote,
+  Sun,
+  X,
+} from 'lucide-react';
+import { getManifest, getChapter } from './services/bibleData';
+import './styles.css';
+
+const NOTES_KEY = 'parallel-notes-v6';
+const THEME_KEY = 'parallel-theme-v6';
+const CHAPTER_LIMIT = 2;
+const chapterKey = (chapter) => `${chapter.book}.${chapter.chapter}`;
+
+function readNotes() {
+  try {
+    return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function App() {
+  const [manifest, setManifest] = useState(null);
+  const [chapters, setChapters] = useState([]);
+  const [notes, setNotes] = useState(readNotes);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedBook, setSelectedBook] = useState('GEN');
+  const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) || 'light');
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [saved, setSaved] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [mobileLanguage, setMobileLanguage] = useState('zh');
+  const [composerVerse, setComposerVerse] = useState(null);
+  const [draft, setDraft] = useState('');
+
+  const saveTimer = useRef(null);
+  const scroller = useRef(null);
+  const loading = useRef(false);
+  const requestController = useRef(null);
+  const scrollAnchor = useRef(null);
+  const jumpTarget = useRef(null);
+  const previousScrollTop = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const loadedManifest = await getManifest(controller.signal);
+        const verses = await getChapter('GEN', 1, controller.signal);
+        setManifest(loadedManifest);
+        setChapters([{ book: 'GEN', chapter: 1, verses }]);
+      } catch (err) {
+        if (err.name !== 'AbortError') setError(err.message);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
+    setSaved(false);
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+      setSaved(true);
+    }, 250);
+    return () => clearTimeout(saveTimer.current);
+  }, [notes]);
+
+  const adjacentChapter = useCallback(
+    (current, direction) => {
+      if (!manifest) return null;
+      const index = manifest.books.findIndex((book) => book.code === current.book);
+      if (index < 0) return null;
+      const book = manifest.books[index];
+
+      if (direction > 0) {
+        if (current.chapter < book.chapters) {
+          return { book: current.book, chapter: current.chapter + 1 };
+        }
+        const nextBook = manifest.books[index + 1];
+        return nextBook ? { book: nextBook.code, chapter: 1 } : null;
+      }
+
+      if (current.chapter > 1) {
+        return { book: current.book, chapter: current.chapter - 1 };
+      }
+      const previousBook = manifest.books[index - 1];
+      return previousBook
+        ? { book: previousBook.code, chapter: previousBook.chapters }
+        : null;
+    },
+    [manifest],
+  );
+
+  const captureScrollAnchor = () => {
+    const host = scroller.current;
+    if (!host) return null;
+    const hostTop = host.getBoundingClientRect().top;
+    const node = [...host.querySelectorAll('[data-id]')].find(
+      (item) => item.getBoundingClientRect().bottom > hostTop + 6,
+    );
+    return node
+      ? { id: node.dataset.id, offset: node.getBoundingClientRect().top - hostTop }
+      : null;
+  };
+
+  useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    if (!anchor || !scroller.current) return;
+    const node = scroller.current.querySelector(
+      `[data-id="${CSS.escape(anchor.id)}"]`,
+    );
+    if (node) {
+      const hostTop = scroller.current.getBoundingClientRect().top;
+      scroller.current.scrollTop +=
+        node.getBoundingClientRect().top - hostTop - anchor.offset;
+    }
+    scrollAnchor.current = null;
+  }, [chapters]);
+
+  const loadAdjacent = useCallback(
+    async (direction) => {
+      if (loading.current || query || !chapters.length) return;
+      const edge = direction > 0 ? chapters.at(-1) : chapters[0];
+      const target = adjacentChapter(edge, direction);
+      if (!target) return;
+
+      loading.current = true;
+      setBusy(direction > 0 ? 'down' : 'up');
+      setError('');
+      requestController.current?.abort();
+      requestController.current = new AbortController();
+
+      try {
+        const verses = await getChapter(
+          target.book,
+          target.chapter,
+          requestController.current.signal,
+        );
+        scrollAnchor.current = captureScrollAnchor();
+        setChapters((current) =>
+          direction > 0
+            ? [...current, { ...target, verses }].slice(-CHAPTER_LIMIT)
+            : [{ ...target, verses }, ...current].slice(0, CHAPTER_LIMIT),
+        );
+      } catch (err) {
+        if (err.name !== 'AbortError') setError(err.message);
+      } finally {
+        loading.current = false;
+        setBusy('');
+      }
+    },
+    [adjacentChapter, chapters, query],
+  );
+
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return undefined;
+    let frame = 0;
+    const handleScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const currentTop = element.scrollTop;
+        const movingDown = currentTop >= previousScrollTop.current;
+        previousScrollTop.current = currentTop;
+        if (
+          movingDown &&
+          element.scrollHeight - currentTop - element.clientHeight < 700
+        ) {
+          loadAdjacent(1);
+        } else if (!movingDown && currentTop < 360) {
+          loadAdjacent(-1);
+        }
+      });
+    };
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => {
+      cancelAnimationFrame(frame);
+      element.removeEventListener('scroll', handleScroll);
+    };
+  }, [loadAdjacent]);
+
+  useEffect(() => {
+    const element = scroller.current;
+    if (
+      element &&
+      chapters.length === 1 &&
+      !loading.current &&
+      element.scrollHeight < element.clientHeight + 700
+    ) {
+      loadAdjacent(1);
+    }
+  }, [chapters, loadAdjacent]);
+
+  const goToVerse = useCallback(async (book, chapter, verse = 1) => {
+    requestController.current?.abort();
+    loading.current = true;
+    setBusy('jump');
+    setError('');
+    try {
+      const verses = await getChapter(book, chapter);
+      jumpTarget.current = `${book}.${chapter}.${verse}`;
+      setChapters([{ book, chapter, verses }]);
+      setPickerOpen(false);
+      setDrawerOpen(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      loading.current = false;
+      setBusy('');
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!jumpTarget.current || !chapters.length) return;
+    requestAnimationFrame(() => {
+      scroller.current
+        ?.querySelector(`[data-id="${CSS.escape(jumpTarget.current)}"]`)
+        ?.scrollIntoView({ block: 'center' });
+      jumpTarget.current = null;
+    });
+  }, [chapters]);
+
+  const verses = useMemo(() => chapters.flatMap((item) => item.verses), [chapters]);
+  const visibleVerses = useMemo(
+    () =>
+      verses.filter(
+        (verse) =>
+          !query ||
+          `${verse.en} ${verse.zh} ${notes[verse.id] || ''}`
+            .toLowerCase()
+            .includes(query.toLowerCase()),
+      ),
+    [notes, query, verses],
+  );
+
+  const bookOrder = useMemo(
+    () => new Map((manifest?.books || []).map((book, index) => [book.code, index])),
+    [manifest],
+  );
+
+  const noteItems = useMemo(
+    () =>
+      Object.entries(notes)
+        .filter(([, text]) => String(text).trim())
+        .map(([id, text]) => {
+          const [book, chapter, verse] = id.split('.');
+          const meta = manifest?.books.find((item) => item.code === book);
+          return {
+            book,
+            chapter: Number(chapter),
+            verse: Number(verse),
+            title: `${meta?.name || book} ${chapter}:${verse}`,
+            zh: `${meta?.nameZh || ''} ${chapter}:${verse}`,
+            text: String(text).trim(),
+          };
+        })
+        .sort(
+          (a, b) =>
+            (bookOrder.get(a.book) ?? 999) - (bookOrder.get(b.book) ?? 999) ||
+            a.chapter - b.chapter ||
+            a.verse - b.verse,
+        ),
+    [bookOrder, manifest, notes],
+  );
+
+  const openComposer = (verse) => {
+    if (!matchMedia('(max-width:850px)').matches) return;
+    setComposerVerse(verse);
+    setDraft(notes[verse.id] || '');
+  };
+
+  const saveComposer = () => {
+    if (!composerVerse) return;
+    setNotes((current) => ({ ...current, [composerVerse.id]: draft }));
+    setComposerVerse(null);
+  };
+
+  return (
+    <main>
+      <header className="top">
+        <div className="brand"><i><BookOpen /></i><b>Parallel Bible<small>ESV · 新譯本 · Notes</small></b></div>
+        <label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search / 搜尋" /></label>
+        <button className="nav" onClick={() => setPickerOpen(true)}><Library />Books</button>
+        <button className="nav" onClick={() => setDrawerOpen(true)}><StickyNote />Notes{noteItems.length > 0 && <em>{noteItems.length}</em>}</button>
+        <button className="mobileLang" onClick={() => setMobileLanguage((value) => (value === 'zh' ? 'en' : 'zh'))} aria-label="Switch Bible language"><Languages /><span>{mobileLanguage === 'zh' ? '繁中' : 'EN'}</span></button>
+        <button onClick={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))} aria-label="Toggle theme">{theme === 'light' ? <Moon /> : <Sun />}</button>
+      </header>
+
+      {error && <div className="error"><AlertTriangle />{error}</div>}
+
+      <section className={`reader mobile-${mobileLanguage}`}>
+        <div className="heads">
+          <Head title="English" subtitle="English Standard Version" />
+          <Head title="繁體中文" subtitle="中文新譯本" />
+          <Head title="Notes" subtitle="Free writing space">{saved && <span><Check />Saved</span>}</Head>
+        </div>
+        <div className="scroll" ref={scroller}>
+          {busy === 'up' && <Loading />}
+          {chapters.map((section) => (
+            <section className="chapterSection" key={chapterKey(section)}>
+              <div className="chapter">{section.verses[0]?.bookName} · {section.verses[0]?.bookNameZh}<strong>{section.chapter}</strong></div>
+              {section.verses.filter((verse) => visibleVerses.includes(verse)).map((verse) => (
+                <div className={`row ${notes[verse.id]?.trim() ? 'hasNote' : ''}`} key={verse.id} data-id={verse.id} onClick={() => openComposer(verse)}>
+                  <Cell number={verse.verse} kind="en">{verse.en}</Cell>
+                  <Cell number={verse.verse} chinese kind="zh">{verse.zh}</Cell>
+                  <div className="note" onClick={(event) => event.stopPropagation()}>
+                    <small>{verse.chapter}:{verse.verse}</small>
+                    <textarea value={notes[verse.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [verse.id]: event.target.value }))} placeholder="Write freely…" />
+                  </div>
+                  <span className="mobileNoteDot"><StickyNote /></span>
+                </div>
+              ))}
+            </section>
+          ))}
+          {(busy === 'down' || busy === 'jump') && <Loading />}
+        </div>
+      </section>
+
+      {pickerOpen && <Picker manifest={manifest} selectedBook={selectedBook} setSelectedBook={setSelectedBook} close={() => setPickerOpen(false)} go={goToVerse} />}
+      {drawerOpen && <NotesDrawer items={noteItems} close={() => setDrawerOpen(false)} go={goToVerse} />}
+      {composerVerse && <MobileComposer verse={composerVerse} value={draft} setValue={setDraft} close={() => setComposerVerse(null)} save={saveComposer} />}
+    </main>
+  );
+}
+
+function Loading() { return <div className="loading"><LoaderCircle />Loading next chapter…</div>; }
+function Head({ title, subtitle, children }) { return <header><div><b>{title}</b><small>{subtitle}</small></div>{children}</header>; }
+function Cell({ number, chinese, kind, children }) { return <div className={`cell ${kind || ''}`} lang={chinese ? 'zh-Hant' : 'en'}><b>{number}</b><p>{children}</p></div>; }
+
+function Picker({ manifest, selectedBook, setSelectedBook, close, go }) {
+  const book = manifest?.books.find((item) => item.code === selectedBook) || manifest?.books[0];
+  return <div className="shade" onMouseDown={(event) => event.target === event.currentTarget && close()}><section className="picker"><ModalHead title="Books & Chapters" subtitle="書卷與章節快速導覽" close={close} /><div className="pickbody"><div className="books"><BookColumn title="Old Testament · 舊約" books={manifest?.books.slice(0, 39) || []} selectedBook={selectedBook} setSelectedBook={setSelectedBook} /><BookColumn title="New Testament · 新約" books={manifest?.books.slice(39) || []} selectedBook={selectedBook} setSelectedBook={setSelectedBook} /></div><aside><span className="eyebrow">CHAPTER · 章</span><h2>{book?.nameZh}</h2><p>{book?.name}</p><div className="grid">{Array.from({ length: book?.chapters || 0 }, (_, index) => <button key={index + 1} onClick={() => go(book.code, index + 1)}>{index + 1}</button>)}</div></aside></div></section></div>;
+}
+
+function BookColumn({ title, books, selectedBook, setSelectedBook }) { return <div className="bookcol"><h3>{title}</h3>{books.map((book) => <button key={book.code} className={selectedBook === book.code ? 'active' : ''} onClick={() => setSelectedBook(book.code)}><span>{book.nameZh}</span><small>{book.name}</small><ChevronRight /></button>)}</div>; }
+
+function NotesDrawer({ items, close, go }) {
+  let lastGroup = '';
+  return <div className="shade drawerShade" onMouseDown={(event) => event.target === event.currentTarget && close()}><aside className="drawer"><ModalHead title="My Notes" subtitle={`${items.length} notes · 按書卷、章、節排序`} close={close} /><div className="list">{items.length ? items.map((item) => { const group = `${item.book}.${item.chapter}`; const heading = group !== lastGroup; lastGroup = group; return <React.Fragment key={`${group}.${item.verse}`}>{heading && <div className="noteGroup">{item.title.split(':')[0]} · {item.zh.split(':')[0]}</div>}<button onClick={() => go(item.book, item.chapter, item.verse)}><i><StickyNote /></i><span><b>{item.title}</b><small>{item.zh}</small><p>{item.text}</p></span><ChevronRight /></button></React.Fragment>; }) : <div className="empty"><StickyNote /><b>No notes yet</b><span>Your verse notes will appear here.</span></div>}</div></aside></div>;
+}
+
+function MobileComposer({ verse, value, setValue, close, save }) {
+  const input = useRef(null);
+  useEffect(() => { input.current?.focus(); }, []);
+  return <div className="composerShade" onMouseDown={(event) => event.target === event.currentTarget && close()}><section className="composer" role="dialog" aria-modal="true" aria-label={`Note for ${verse.ref}`}><div className="composerHandle" /><header><button onClick={close} aria-label="Cancel"><X /></button><div><small>{verse.bookNameZh} · {verse.chapter}:{verse.verse}</small><strong>{verse.zh}</strong></div><button className="saveNote" onClick={save} aria-label="Save note"><Send /></button></header><textarea ref={input} value={value} onChange={(event) => setValue(event.target.value)} placeholder="寫下筆記…" /><footer><span>筆記將連結至 {verse.bookNameZh} {verse.chapter}:{verse.verse}</span><button onClick={save}><Check />完成</button></footer></section></div>;
+}
+
+function ModalHead({ title, subtitle, close }) { return <header className="modalhead"><div><b>{title}</b><small>{subtitle}</small></div><button onClick={close}><X /></button></header>; }
+
+createRoot(document.getElementById('root')).render(<App />);

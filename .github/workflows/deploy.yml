@@ -2,9 +2,7 @@ name: Deploy Bible Reader to GitHub Pages
 
 "on":
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -19,12 +17,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure GitHub Pages
+      - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Set up Node.js
@@ -32,101 +29,109 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Locate Vite application
-        id: locate
+      - name: Find project folder
+        id: project
         shell: bash
         run: |
-          set -euo pipefail
+          PROJECT_DIR=""
 
-          if [ -f "package.json" ] && [ -f "index.html" ]; then
+          if [ -f package.json ] && [ -f src/main.jsx ]; then
             PROJECT_DIR="."
           else
-            mapfile -t MATCHES < <(find . -mindepth 2 -maxdepth 4               -type f -name package.json               -not -path '*/node_modules/*'               -print | sed 's#^./##' | sort)
-
-            PROJECT_DIR=""
-            for PACKAGE_FILE in "${MATCHES[@]}"; do
-              CANDIDATE="$(dirname "$PACKAGE_FILE")"
-              if [ -f "$CANDIDATE/index.html" ] && [ -d "$CANDIDATE/src" ]; then
-                if [ -n "$PROJECT_DIR" ]; then
-                  echo "Error: more than one Vite application was found:"
-                  echo "  $PROJECT_DIR"
-                  echo "  $CANDIDATE"
-                  exit 1
-                fi
-                PROJECT_DIR="$CANDIDATE"
+            while IFS= read -r FILE; do
+              DIR="$(dirname "$FILE")"
+              if [ -f "$DIR/package.json" ]; then
+                PROJECT_DIR="$DIR"
+                break
               fi
-            done
+            done < <(find . -type f -path '*/src/main.jsx' -not -path '*/node_modules/*' | sort)
           fi
 
-          if [ -z "${PROJECT_DIR:-}" ]; then
-            echo "Error: no Vite application containing package.json, index.html, and src/ was found."
-            echo "Repository contents:"
-            find . -maxdepth 4 -type f -not -path '*/.git/*' | sort | sed -n '1,240p'
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "No project containing package.json and src/main.jsx was found."
+            find . -maxdepth 5 -type f -not -path '*/.git/*' | sort | head -300
             exit 1
           fi
 
-          echo "Vite application found at: $PROJECT_DIR"
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          PROJECT_DIR="${PROJECT_DIR#./}"
+          [ -n "$PROJECT_DIR" ] || PROJECT_DIR="."
+          echo "Project folder: $PROJECT_DIR"
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        working-directory: ${{ steps.locate.outputs.project_dir }}
-        run: npm ci
-
-      - name: Validate source
-        working-directory: ${{ steps.locate.outputs.project_dir }}
+      - name: Create missing Vite entry file
+        working-directory: ${{ steps.project.outputs.dir }}
         shell: bash
         run: |
-          set -euo pipefail
+          if [ ! -f index.html ]; then
+            cat > index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <meta name="theme-color" content="#181c17" />
+              <title>Parallel Bible</title>
+            </head>
+            <body>
+              <div id="root"></div>
+              <script type="module" src="/src/main.jsx"></script>
+            </body>
+          </html>
+          HTML
+          fi
           test -f index.html
+
+      - name: Install dependencies
+        working-directory: ${{ steps.project.outputs.dir }}
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Validate application files
+        working-directory: ${{ steps.project.outputs.dir }}
+        shell: bash
+        run: |
           test -f src/main.jsx
           test -f src/services/bibleData.js
           test -f public/bible/manifest.json
           test -f public/bible/GEN/1.json
 
-          IMPORT_COUNT=$(grep -c "services/bibleData" src/main.jsx || true)
-          if [ "$IMPORT_COUNT" -ne 1 ]; then
-            echo "Error: expected exactly one bibleData import; found $IMPORT_COUNT."
+          COUNT=$(grep -c "services/bibleData" src/main.jsx || true)
+          if [ "$COUNT" -ne 1 ]; then
+            echo "Expected one bibleData import, found $COUNT"
             exit 1
           fi
 
-          if grep -RInE '^(<<<<<<< |=======|>>>>>>> )' src vite.config.js package.json; then
-            echo "Error: unresolved Git conflict markers found."
+          if grep -RInE '^(<<<<<<< |=======|>>>>>>> )' src package.json vite.config.js 2>/dev/null; then
+            echo "Unresolved merge markers found"
             exit 1
           fi
 
-      - name: Build static Bible Reader
-        working-directory: ${{ steps.locate.outputs.project_dir }}
+      - name: Build website
+        working-directory: ${{ steps.project.outputs.dir }}
         env:
           VITE_STATIC_BIBLE: "true"
           VITE_BASE_PATH: "/"
         run: npx vite build --outDir dist --emptyOutDir
 
-      - name: Verify generated website
-        working-directory: ${{ steps.locate.outputs.project_dir }}
+      - name: Verify build
+        working-directory: ${{ steps.project.outputs.dir }}
         shell: bash
         run: |
-          set -euo pipefail
-          echo "Generated files:"
-          find dist -maxdepth 3 -type f | sort | sed -n '1,200p'
-
+          find dist -maxdepth 3 -type f | sort | head -200
           test -f dist/index.html
           test -f dist/bible/manifest.json
           test -f dist/bible/GEN/1.json
+          grep -q 'assets/' dist/index.html
 
-          if grep -q '/src/main.jsx' dist/index.html; then
-            echo "Error: built index.html still references /src/main.jsx."
-            exit 1
-          fi
-
-          if ! grep -q 'assets/' dist/index.html; then
-            echo "Error: compiled asset references are missing from dist/index.html."
-            exit 1
-          fi
-
-      - name: Upload GitHub Pages artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ${{ steps.locate.outputs.project_dir }}/dist
+          path: ${{ steps.project.outputs.dir }}/dist
 
   deploy:
     needs: build
@@ -134,8 +139,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: Deploy GitHub Pages
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

@@ -1,3 +1,4 @@
+import { getManifest, getChapter } from "./services/bibleData";
 import React, {
   useCallback,
   useEffect,
@@ -22,7 +23,7 @@ import {
   Sun,
   X,
 } from 'lucide-react';
-import { getManifest, getChapter } from './services/bibleData';
+
 import './styles.css';
 
 const NOTES_KEY = 'parallel-notes-v6';
