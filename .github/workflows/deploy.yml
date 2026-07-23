@@ -31,21 +31,52 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
 
-      - name: Show repository structure
+      - name: Locate Vite application
+        id: locate
         shell: bash
         run: |
-          echo "Repository root: $GITHUB_WORKSPACE"
-          pwd
-          find . -maxdepth 2 -type f | sort | sed -n '1,160p'
+          set -euo pipefail
+
+          if [ -f "package.json" ] && [ -f "index.html" ]; then
+            PROJECT_DIR="."
+          else
+            mapfile -t MATCHES < <(find . -mindepth 2 -maxdepth 4               -type f -name package.json               -not -path '*/node_modules/*'               -print | sed 's#^./##' | sort)
+
+            PROJECT_DIR=""
+            for PACKAGE_FILE in "${MATCHES[@]}"; do
+              CANDIDATE="$(dirname "$PACKAGE_FILE")"
+              if [ -f "$CANDIDATE/index.html" ] && [ -d "$CANDIDATE/src" ]; then
+                if [ -n "$PROJECT_DIR" ]; then
+                  echo "Error: more than one Vite application was found:"
+                  echo "  $PROJECT_DIR"
+                  echo "  $CANDIDATE"
+                  exit 1
+                fi
+                PROJECT_DIR="$CANDIDATE"
+              fi
+            done
+          fi
+
+          if [ -z "${PROJECT_DIR:-}" ]; then
+            echo "Error: no Vite application containing package.json, index.html, and src/ was found."
+            echo "Repository contents:"
+            find . -maxdepth 4 -type f -not -path '*/.git/*' | sort | sed -n '1,240p'
+            exit 1
+          fi
+
+          echo "Vite application found at: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         run: npm ci
 
-      - name: Validate source before build
+      - name: Validate source
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         shell: bash
         run: |
+          set -euo pipefail
           test -f index.html
           test -f src/main.jsx
           test -f src/services/bibleData.js
@@ -54,46 +85,48 @@ jobs:
 
           IMPORT_COUNT=$(grep -c "services/bibleData" src/main.jsx || true)
           if [ "$IMPORT_COUNT" -ne 1 ]; then
-            echo "Expected exactly one bibleData import; found $IMPORT_COUNT"
+            echo "Error: expected exactly one bibleData import; found $IMPORT_COUNT."
             exit 1
           fi
 
           if grep -RInE '^(<<<<<<< |=======|>>>>>>> )' src vite.config.js package.json; then
-            echo "Unresolved Git merge conflict markers found"
+            echo "Error: unresolved Git conflict markers found."
             exit 1
           fi
 
       - name: Build static Bible Reader
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         env:
           VITE_STATIC_BIBLE: "true"
           VITE_BASE_PATH: "/"
         run: npx vite build --outDir dist --emptyOutDir
 
       - name: Verify generated website
+        working-directory: ${{ steps.locate.outputs.project_dir }}
         shell: bash
         run: |
-          echo "Build output:"
-          find dist -maxdepth 3 -type f | sort | sed -n '1,160p'
+          set -euo pipefail
+          echo "Generated files:"
+          find dist -maxdepth 3 -type f | sort | sed -n '1,200p'
 
-          test -d dist
           test -f dist/index.html
           test -f dist/bible/manifest.json
           test -f dist/bible/GEN/1.json
 
           if grep -q '/src/main.jsx' dist/index.html; then
-            echo "Error: dist/index.html still points to source main.jsx"
+            echo "Error: built index.html still references /src/main.jsx."
             exit 1
           fi
 
           if ! grep -q 'assets/' dist/index.html; then
-            echo "Error: compiled asset reference is missing from dist/index.html"
+            echo "Error: compiled asset references are missing from dist/index.html."
             exit 1
           fi
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: ${{ steps.locate.outputs.project_dir }}/dist
 
   deploy:
     needs: build
