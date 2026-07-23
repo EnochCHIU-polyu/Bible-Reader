@@ -20,6 +20,7 @@ import {
   Search,
   Send,
   StickyNote,
+  Trash2,
   Sun,
   X,
 } from 'lucide-react';
@@ -188,6 +189,44 @@ const MOBILE_NOTE_CSS = `
   .composer footer { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 10px !important; min-height: 48px !important; padding: 0 !important; }
   .composer footer span { min-width: 0 !important; font-size: 12px !important; opacity: .65 !important; }
   .composer footer button { min-height: 48px !important; padding: 0 18px !important; display: inline-flex !important; align-items: center !important; gap: 7px !important; border-radius: 14px !important; white-space: nowrap !important; }
+}
+`;
+
+const NOTE_DELETE_CSS = `
+.noteSwipeRow {
+  position: relative;
+  overflow: hidden;
+  background: #b42318;
+}
+.noteSwipeDelete {
+  position: absolute !important;
+  z-index: 1;
+  inset: 0 0 0 auto;
+  width: 88px !important;
+  display: grid !important;
+  place-content: center !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: white !important;
+  background: #b42318 !important;
+}
+.noteSwipeDelete svg { width: 21px !important; height: 21px !important; margin: auto; }
+.noteSwipeDelete span { font-size: 12px !important; font-weight: 700 !important; }
+.noteSwipeContent {
+  position: relative !important;
+  z-index: 2 !important;
+  width: 100% !important;
+  transform: translate3d(var(--note-swipe-x, 0px), 0, 0);
+  transition: transform 180ms ease-out !important;
+  touch-action: pan-y !important;
+  will-change: transform;
+  background: var(--surface, #fff) !important;
+}
+.noteSwipeContent.isDragging { transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .noteSwipeContent { transition: none !important; }
 }
 `;
 const chapterKey = (chapter) => `${chapter.book}.${chapter.chapter}`;
@@ -567,11 +606,20 @@ function App() {
     setNotes((current) => ({ ...current, [composerVerse.id]: draft }));
     setComposerVerse(null);
   };
+  const deleteNote = useCallback((id) => {
+    setNotes((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   return (
     <main>
       <style>{MOBILE_LOCKED_HEADER_CSS}</style>
       <style>{MOBILE_NOTE_CSS}</style>
+      <style>{NOTE_DELETE_CSS}</style>
       <header className="top">
         <div className="brand"><i><BookOpen /></i><b>Parallel Bible<small>ESV · 新譯本 · Notes</small></b></div>
         <label className="search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search / 搜尋" /></label>
@@ -612,7 +660,7 @@ function App() {
       </section>
 
       {pickerOpen && <Picker manifest={manifest} selectedBook={selectedBook} setSelectedBook={setSelectedBook} close={() => setPickerOpen(false)} go={goToVerse} />}
-      {drawerOpen && <NotesDrawer items={noteItems} close={() => setDrawerOpen(false)} go={goToVerse} />}
+      {drawerOpen && <NotesDrawer items={noteItems} close={() => setDrawerOpen(false)} go={goToVerse} onDelete={deleteNote} />}
       {composerVerse && <MobileComposer verse={composerVerse} value={draft} setValue={setDraft} close={() => setComposerVerse(null)} save={saveComposer} backgroundRef={scroller} />}
     </main>
   );
@@ -629,9 +677,66 @@ function Picker({ manifest, selectedBook, setSelectedBook, close, go }) {
 
 function BookColumn({ title, books, selectedBook, setSelectedBook }) { return <div className="bookcol"><h3>{title}</h3>{books.map((book) => <button key={book.code} className={selectedBook === book.code ? 'active' : ''} onClick={() => setSelectedBook(book.code)}><span>{book.nameZh}</span><small>{book.name}</small><ChevronRight /></button>)}</div>; }
 
-function NotesDrawer({ items, close, go }) {
+function NotesDrawer({ items, close, go, onDelete }) {
   let lastGroup = '';
-  return <div className="shade drawerShade" onMouseDown={(event) => event.target === event.currentTarget && close()}><aside className="drawer"><ModalHead title="My Notes" subtitle={`${items.length} notes · 按書卷、章、節排序`} close={close} /><div className="list">{items.length ? items.map((item) => { const group = `${item.book}.${item.chapter}`; const heading = group !== lastGroup; lastGroup = group; return <React.Fragment key={`${group}.${item.verse}`}>{heading && <div className="noteGroup">{item.title.split(':')[0]} · {item.zh.split(':')[0]}</div>}<button onClick={() => go(item.book, item.chapter, item.verse)}><i><StickyNote /></i><span><b>{item.title}</b><small>{item.zh}</small><p>{item.text}</p></span><ChevronRight /></button></React.Fragment>; }) : <div className="empty"><StickyNote /><b>No notes yet</b><span>Your verse notes will appear here.</span></div>}</div></aside></div>;
+  return <div className="shade drawerShade" onMouseDown={(event) => event.target === event.currentTarget && close()}><aside className="drawer"><ModalHead title="My Notes" subtitle={`${items.length} notes · 左滑刪除`} close={close} /><div className="list">{items.length ? items.map((item) => {
+    const group = `${item.book}.${item.chapter}`;
+    const heading = group !== lastGroup;
+    const id = `${group}.${item.verse}`;
+    lastGroup = group;
+    return <React.Fragment key={id}>{heading && <div className="noteGroup">{item.title.split(':')[0]} · {item.zh.split(':')[0]}</div>}<SwipeNoteItem item={item} open={() => go(item.book, item.chapter, item.verse)} remove={() => onDelete(id)} /></React.Fragment>;
+  }) : <div className="empty"><StickyNote /><b>No notes yet</b><span>Your verse notes will appear here.</span></div>}</div></aside></div>;
+}
+
+function SwipeNoteItem({ item, open, remove }) {
+  const DELETE_WIDTH = 88;
+  const start = useRef({ x: 0, y: 0, offset: 0 });
+  const pointer = useRef(null);
+  const didDrag = useRef(false);
+  const [offset, setOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  const begin = (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    pointer.current = event.pointerId;
+    start.current = { x: event.clientX, y: event.clientY, offset };
+    didDrag.current = false;
+    setDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const move = (event) => {
+    if (pointer.current !== event.pointerId) return;
+    const dx = event.clientX - start.current.x;
+    const dy = event.clientY - start.current.y;
+    if (!didDrag.current && Math.abs(dy) >= Math.abs(dx)) return;
+    if (Math.abs(dx) > 7) didDrag.current = true;
+    if (!didDrag.current) return;
+    setOffset(Math.max(-DELETE_WIDTH, Math.min(0, start.current.offset + dx)));
+  };
+
+  const end = (event) => {
+    if (pointer.current !== event.pointerId) return;
+    pointer.current = null;
+    setDragging(false);
+    setOffset((value) => value <= -DELETE_WIDTH * 0.42 ? -DELETE_WIDTH : 0);
+  };
+
+  const activate = () => {
+    if (didDrag.current) {
+      didDrag.current = false;
+      return;
+    }
+    if (offset < 0) setOffset(0);
+    else open();
+  };
+
+  return <div className="noteSwipeRow">
+    <button className="noteSwipeDelete" onClick={remove} aria-label={`Delete ${item.title}`}><Trash2 /><span>Delete</span></button>
+    <button className={`noteSwipeContent ${dragging ? 'isDragging' : ''}`} style={{ '--note-swipe-x': `${offset}px` }} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onClick={activate}>
+      <i><StickyNote /></i><span><b>{item.title}</b><small>{item.zh}</small><p>{item.text}</p></span><ChevronRight />
+    </button>
+  </div>;
 }
 
 function MobileComposer({ verse, value, setValue, close, save, backgroundRef }) {
