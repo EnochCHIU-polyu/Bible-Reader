@@ -98,6 +98,7 @@ function App() {
   const previousScrollTop = useRef(0);
   const chaptersRef = useRef([]);
   const inFlightChapter = useRef('');
+  const requestVersion = useRef(0);
   const positionTimer = useRef(null);
   const restorePosition = useRef(readReadingPosition());
 
@@ -112,8 +113,10 @@ function App() {
         const book = validBook ? savedBook : 'GEN';
         const chapter = validBook && Number(savedChapter) > 0 ? Number(savedChapter) : 1;
         const verses = await getChapter(book, chapter, controller.signal);
+        const initialChapters = [{ book, chapter, verses }];
         setManifest(loadedManifest);
-        setChapters([{ book, chapter, verses }]);
+        chaptersRef.current = initialChapters;
+        setChapters(initialChapters);
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       }
@@ -202,6 +205,7 @@ function App() {
 
       loading.current = true;
       inFlightChapter.current = targetKey;
+      const version = ++requestVersion.current;
       setBusy(direction > 0 ? 'down' : 'up');
       setError('');
       const controller = new AbortController();
@@ -209,10 +213,13 @@ function App() {
 
       try {
         const verses = await getChapter(target.book, target.chapter, controller.signal);
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || version !== requestVersion.current) return;
         setChapters((current) => {
           // The functional update is the source of truth; stale scroll callbacks
           // can never insert the same chapter twice.
+          if (version !== requestVersion.current) return current;
+          const liveEdge = direction > 0 ? current.at(-1) : current[0];
+          if (!liveEdge || chapterKey(liveEdge) !== chapterKey(edge)) return current;
           if (current.some((item) => chapterKey(item) === targetKey)) return current;
           const anchor = captureScrollAnchor();
           const next = direction > 0
@@ -223,14 +230,17 @@ function App() {
             : next.slice(0, CHAPTER_LIMIT);
           // Preserve the visible verse when prepending or when trimming the top.
           if (direction < 0 || next.length > CHAPTER_LIMIT) scrollAnchor.current = anchor;
+          chaptersRef.current = trimmed;
           return trimmed;
         });
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       } finally {
-        if (inFlightChapter.current === targetKey) inFlightChapter.current = '';
-        loading.current = false;
-        setBusy('');
+        if (version === requestVersion.current) {
+          if (inFlightChapter.current === targetKey) inFlightChapter.current = '';
+          loading.current = false;
+          setBusy('');
+        }
       }
     },
     [adjacentChapter, query],
@@ -283,22 +293,44 @@ function App() {
   }, [chapters, loadAdjacent, query]);
 
   const goToVerse = useCallback(async (book, chapter, verse = 1) => {
+    // Start a new navigation session. Any old infinite-scroll response is now stale
+    // and is forbidden from writing into the newly selected book.
+    const version = ++requestVersion.current;
     requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
     loading.current = true;
+    inFlightChapter.current = '';
+    chaptersRef.current = [];
+    scrollAnchor.current = null;
+    restorePosition.current = null;
+    jumpTarget.current = `${book}.${chapter}.${verse}`;
+    setSelectedBook(book);
+    setPickerOpen(false);
+    setDrawerOpen(false);
     setBusy('jump');
     setError('');
+    setChapters([]);
+
     try {
-      const verses = await getChapter(book, chapter);
-      restorePosition.current = null;
-      jumpTarget.current = `${book}.${chapter}.${verse}`;
-      setChapters([{ book, chapter, verses }]);
-      setPickerOpen(false);
-      setDrawerOpen(false);
+      const verses = await getChapter(book, chapter, controller.signal);
+      if (controller.signal.aborted || version !== requestVersion.current) return;
+      const nextChapters = [{ book, chapter, verses }];
+      chaptersRef.current = nextChapters;
+      previousScrollTop.current = 0;
+      if (scroller.current) scroller.current.scrollTop = 0;
+      localStorage.setItem(READING_POSITION_KEY, JSON.stringify({
+        id: `${book}.${chapter}.${verse}`,
+        offset: 0,
+      }));
+      setChapters(nextChapters);
     } catch (err) {
-      setError(err.message);
+      if (err.name !== 'AbortError' && version === requestVersion.current) setError(err.message);
     } finally {
-      loading.current = false;
-      setBusy('');
+      if (version === requestVersion.current) {
+        loading.current = false;
+        setBusy('');
+      }
     }
   }, []);
 
