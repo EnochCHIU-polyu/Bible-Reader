@@ -35,7 +35,7 @@ const MOBILE_LOCKED_HEADER_CSS = `
 @media (max-width: 850px) {
   :root {
     --phone-safe-top: max(env(safe-area-inset-top, 0px), 20px);
-    --phone-header-bar: 64px;
+    --phone-header-bar: 48px;
     --phone-header-height: calc(var(--phone-safe-top) + var(--phone-header-bar));
   }
 
@@ -93,7 +93,7 @@ const MOBILE_LOCKED_HEADER_CSS = `
   .top .mobileLang {
     flex-basis: auto !important;
     width: auto !important;
-    min-width: 64px !important;
+    min-width: 48px !important;
     padding-inline: 10px !important;
   }
 
