@@ -326,6 +326,45 @@ function readNotes() {
   }
 }
 
+function readRouteState() {
+  if (typeof window === 'undefined') return null;
+  const hashPath = window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const hashBook = hashPath[0];
+  const hashChapter = Number(hashPath[1]);
+  const params = new URLSearchParams(window.location.search);
+  const bookFromQuery = params.get('book');
+  const chapterFromQuery = Number(params.get('chapter'));
+
+  const selectedBook = hashBook || bookFromQuery || 'GEN';
+  const selectedChapter = Number.isFinite(hashChapter) && hashChapter > 0
+    ? hashChapter
+    : Number.isFinite(chapterFromQuery) && chapterFromQuery > 0
+      ? chapterFromQuery
+      : 1;
+
+  if (selectedBook) {
+    return {
+      book: String(selectedBook).toUpperCase(),
+      chapter: selectedChapter,
+    };
+  }
+  return null;
+}
+
+function syncRouteState(book, chapter, verse = 1) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('book', String(book).toUpperCase());
+  url.searchParams.set('chapter', String(Number(chapter) || 1));
+  if (Number(verse) > 1) {
+    url.searchParams.set('verse', String(Number(verse)));
+  } else {
+    url.searchParams.delete('verse');
+  }
+  url.hash = `/${String(book).toUpperCase()}/${Number(chapter) || 1}`;
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 function App() {
   const [manifest, setManifest] = useState(null);
   const [chapters, setChapters] = useState([]);
@@ -362,12 +401,16 @@ function App() {
     (async () => {
       try {
         const loadedManifest = await getManifest(controller.signal);
+        const routeState = readRouteState();
         const savedPosition = restorePosition.current;
         const [savedBook, savedChapter] = savedPosition?.id?.split('.') || [];
+        const initialBookFromRoute = routeState?.book || savedBook || 'GEN';
+        const initialMeta = loadedManifest.books.find((item) => item.code === initialBookFromRoute);
+        const routeValid = routeState && Number(routeState.chapter) >= 1 && Number(routeState.chapter) <= (initialMeta?.chapters || 0);
         const savedMeta = loadedManifest.books.find((item) => item.code === savedBook);
         const validChapter = Number(savedChapter) >= 1 && Number(savedChapter) <= (savedMeta?.chapters || 0);
-        const book = savedMeta && validChapter ? savedBook : 'GEN';
-        const chapter = savedMeta && validChapter ? Number(savedChapter) : 1;
+        const book = routeValid ? initialBookFromRoute : (savedMeta && validChapter ? savedBook : 'GEN');
+        const chapter = routeValid ? Number(routeState.chapter) : (savedMeta && validChapter ? Number(savedChapter) : 1);
         const verses = await getChapter(book, chapter, controller.signal);
         const initial = [{ book, chapter, verses }];
         chapterCache.current.set(`${book}.${chapter}`, verses);
@@ -375,6 +418,7 @@ function App() {
         setManifest(loadedManifest);
         setSelectedBook(book);
         setChapters(initial);
+        syncRouteState(book, chapter, 1);
       } catch (err) {
         if (err.name !== 'AbortError') setError(err.message);
       }
@@ -571,12 +615,12 @@ function App() {
     scrollAnchor.current = null;
     restorePosition.current = null;
     jumpTarget.current = `${book}.${chapter}.${verse}`;
+    syncRouteState(book, chapter, verse);
 
     try {
       const target = { book, chapter };
-      const previous = adjacentChapter(target, -1);
       const next = adjacentChapter(target, 1);
-      const candidates = [previous, target, next].filter(Boolean);
+      const candidates = [target, next].filter(Boolean);
       const loaded = await Promise.all(candidates.map(async (item) => ({
         ...item,
         verses: await getCachedChapter(item.book, item.chapter, controller.signal),
@@ -591,10 +635,10 @@ function App() {
       localStorage.setItem(READING_POSITION_KEY, JSON.stringify({ id: jumpTarget.current, offset: 0 }));
       setChapters(loaded);
 
-      // Also warm one extra chapter in each direction without displaying it.
-      const before = previous && adjacentChapter(previous, -1);
+      // Warm one extra chapter beyond the direct jump target without altering
+      // the visible stream, so the next page turn remains responsive.
       const after = next && adjacentChapter(next, 1);
-      [before, after].filter(Boolean).forEach((item) => {
+      [after].filter(Boolean).forEach((item) => {
         getCachedChapter(item.book, item.chapter).catch(() => {});
       });
     } catch (err) {
@@ -630,6 +674,67 @@ function App() {
       }
     });
   }, [chapters]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const route = readRouteState();
+      if (!route || !manifest) return;
+      const meta = manifest.books.find((item) => item.code === route.book);
+      if (!meta || route.chapter < 1 || route.chapter > meta.chapters) return;
+      const current = chaptersRef.current.find((item) => item.book === route.book && item.chapter === route.chapter);
+      if (current) {
+        setSelectedBook(route.book);
+        return;
+      }
+      goToVerse(route.book, route.chapter, 1);
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [goToVerse, manifest]);
+
+  const activeChapter = useMemo(() => {
+    if (chaptersRef.current.length === 0) return null;
+    const active = chaptersRef.current.find((item) => item.book === selectedBook)
+      || chaptersRef.current[0];
+    return active || null;
+  }, [chapters, selectedBook]);
+
+  const previousChapter = useMemo(() => {
+    if (!activeChapter) return null;
+    return adjacentChapter(activeChapter, -1);
+  }, [activeChapter, adjacentChapter]);
+
+  const nextChapter = useMemo(() => {
+    if (!activeChapter) return null;
+    return adjacentChapter(activeChapter, 1);
+  }, [activeChapter, adjacentChapter]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const tag = event.target?.tagName;
+      const isTextField = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if (isTextField) return;
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPickerOpen(true);
+      }
+
+      if (event.key === 'ArrowRight' && nextChapter) {
+        event.preventDefault();
+        goToVerse(nextChapter.book, nextChapter.chapter, 1);
+      }
+
+      if (event.key === 'ArrowLeft' && previousChapter) {
+        event.preventDefault();
+        goToVerse(previousChapter.book, previousChapter.chapter, 1);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [goToVerse, nextChapter, previousChapter]);
 
   const verses = useMemo(() => chapters.flatMap((item) => item.verses), [chapters]);
   const visibleVerses = useMemo(
