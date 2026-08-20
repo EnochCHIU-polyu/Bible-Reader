@@ -690,6 +690,23 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [goToVerse, manifest]);
 
+  const activeChapter = useMemo(() => {
+    if (chaptersRef.current.length === 0) return null;
+    const active = chaptersRef.current.find((item) => item.book === selectedBook)
+      || chaptersRef.current[0];
+    return active || null;
+  }, [chapters, selectedBook]);
+
+  const previousChapter = useMemo(() => {
+    if (!activeChapter) return null;
+    return adjacentChapter(activeChapter, -1);
+  }, [activeChapter, adjacentChapter]);
+
+  const nextChapter = useMemo(() => {
+    if (!activeChapter) return null;
+    return adjacentChapter(activeChapter, 1);
+  }, [activeChapter, adjacentChapter]);
+
   useEffect(() => {
     const onKeyDown = (event) => {
       const tag = event.target?.tagName;
@@ -715,23 +732,6 @@ function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [goToVerse, nextChapter, previousChapter]);
-
-  const activeChapter = useMemo(() => {
-    if (chaptersRef.current.length === 0) return null;
-    const active = chaptersRef.current.find((item) => item.book === selectedBook)
-      || chaptersRef.current[0];
-    return active || null;
-  }, [chapters, selectedBook]);
-
-  const previousChapter = useMemo(() => {
-    if (!activeChapter) return null;
-    return adjacentChapter(activeChapter, -1);
-  }, [activeChapter, adjacentChapter]);
-
-  const nextChapter = useMemo(() => {
-    if (!activeChapter) return null;
-    return adjacentChapter(activeChapter, 1);
-  }, [activeChapter, adjacentChapter]);
 
   const verses = useMemo(() => chapters.flatMap((item) => item.verses), [chapters]);
   const visibleVerses = useMemo(
