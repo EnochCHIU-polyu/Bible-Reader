@@ -1,9 +1,34 @@
 const staticMode = import.meta.env.VITE_STATIC_BIBLE === 'true'
 const baseUrl = import.meta.env.BASE_URL
+const CACHE_PREFIX = 'parallel-bible-cache-v1'
 
 function staticPath(relativePath) {
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
   return `${normalizedBase}${relativePath.replace(/^\/+/, '')}`
+}
+
+function cacheKeyForChapter(book, chapter) {
+  return `${CACHE_PREFIX}:${String(book).toUpperCase()}:${Number(chapter)}`
+}
+
+function readCachedJson(key) {
+  try {
+    if (typeof window === 'undefined' || !('localStorage' in window)) return null
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function writeCachedJson(key, value) {
+  try {
+    if (typeof window === 'undefined' || !('localStorage' in window)) return
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Ignore storage quota or privacy restrictions.
+  }
 }
 
 async function fetchJson(url, { signal } = {}) {
@@ -39,8 +64,19 @@ export function getChapter(book, chapter, signal) {
   if (!Number.isInteger(safeChapter) || safeChapter < 1) {
     return Promise.reject(new Error(`Invalid Bible chapter: ${chapter}`))
   }
+
+  const key = cacheKeyForChapter(safeBook, safeChapter)
+  const cached = readCachedJson(key)
+  if (cached) {
+    return Promise.resolve(cached)
+  }
+
   const url = staticMode
     ? staticPath(`bible/${safeBook}/${safeChapter}.json`)
     : `/api/chapters/${safeBook}/${safeChapter}`
-  return fetchJson(url, { signal })
+
+  return fetchJson(url, { signal }).then((payload) => {
+    writeCachedJson(key, payload)
+    return payload
+  })
 }
