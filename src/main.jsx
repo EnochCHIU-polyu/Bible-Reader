@@ -619,9 +619,8 @@ function App() {
 
     try {
       const target = { book, chapter };
-      const previous = adjacentChapter(target, -1);
       const next = adjacentChapter(target, 1);
-      const candidates = [previous, target, next].filter(Boolean);
+      const candidates = [target, next].filter(Boolean);
       const loaded = await Promise.all(candidates.map(async (item) => ({
         ...item,
         verses: await getCachedChapter(item.book, item.chapter, controller.signal),
@@ -636,10 +635,10 @@ function App() {
       localStorage.setItem(READING_POSITION_KEY, JSON.stringify({ id: jumpTarget.current, offset: 0 }));
       setChapters(loaded);
 
-      // Also warm one extra chapter in each direction without displaying it.
-      const before = previous && adjacentChapter(previous, -1);
+      // Warm one extra chapter beyond the direct jump target without altering
+      // the visible stream, so the next page turn remains responsive.
       const after = next && adjacentChapter(next, 1);
-      [before, after].filter(Boolean).forEach((item) => {
+      [after].filter(Boolean).forEach((item) => {
         getCachedChapter(item.book, item.chapter).catch(() => {});
       });
     } catch (err) {
@@ -813,13 +812,6 @@ function App() {
         <button className="mobileLang" onClick={() => setMobileLanguage((value) => (value === 'zh' ? 'en' : 'zh'))} aria-label="Switch Bible language"><Languages /><span>{mobileLanguage === 'zh' ? '繁中' : 'EN'}</span></button>
         <button onClick={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))} aria-label="Toggle theme">{theme === 'light' ? <Moon /> : <Sun />}</button>
       </header>
-
-      <nav className="mobileBottomNav" aria-label="Bible chapter navigation">
-        <button type="button" onClick={() => setPickerOpen(true)}><Library /><span>Books</span></button>
-        <button type="button" disabled={!previousChapter} onClick={() => previousChapter && goToVerse(previousChapter.book, previousChapter.chapter, 1)}><ChevronRight style={{ transform: 'rotate(180deg)' }} /><span>Prev</span></button>
-        <button type="button" disabled={!nextChapter} onClick={() => nextChapter && goToVerse(nextChapter.book, nextChapter.chapter, 1)}><ChevronRight /><span>Next</span></button>
-        <button type="button" onClick={() => setDrawerOpen(true)}><StickyNote /><span>Notes</span>{noteItems.length > 0 && <em>{noteItems.length}</em>}</button>
-      </nav>
 
       {error && <div className="error"><AlertTriangle />{error}</div>}
 
