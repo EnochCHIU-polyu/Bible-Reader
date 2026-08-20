@@ -328,20 +328,24 @@ function readNotes() {
 
 function readRouteState() {
   if (typeof window === 'undefined') return null;
+  const hashPath = window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const hashBook = hashPath[0];
+  const hashChapter = Number(hashPath[1]);
   const params = new URLSearchParams(window.location.search);
   const bookFromQuery = params.get('book');
   const chapterFromQuery = Number(params.get('chapter'));
-  const hashBook = window.location.hash.replace(/^#\/?/, '').split('/')[0];
-  const hashChapter = Number(window.location.hash.replace(/^#\/?/, '').split('/')[1]);
 
-  if (bookFromQuery || hashBook) {
+  const selectedBook = hashBook || bookFromQuery || 'GEN';
+  const selectedChapter = Number.isFinite(hashChapter) && hashChapter > 0
+    ? hashChapter
+    : Number.isFinite(chapterFromQuery) && chapterFromQuery > 0
+      ? chapterFromQuery
+      : 1;
+
+  if (selectedBook) {
     return {
-      book: (bookFromQuery || hashBook || 'GEN').toUpperCase(),
-      chapter: Number.isFinite(chapterFromQuery) && chapterFromQuery > 0
-        ? chapterFromQuery
-        : Number.isFinite(hashChapter) && hashChapter > 0
-          ? hashChapter
-          : 1,
+      book: String(selectedBook).toUpperCase(),
+      chapter: selectedChapter,
     };
   }
   return null;
